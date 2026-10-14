@@ -3,7 +3,6 @@
 [![test](https://img.shields.io/github/actions/workflow/status/lrnxzz/go-ssdp/test.yml?branch=main&label=test)](https://github.com/lrnxzz/go-ssdp/actions/workflows/test.yml)
 [![coverage](https://raw.githubusercontent.com/lrnxzz/go-ssdp/badges/.badges/main/coverage.svg)](.testcoverage.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lrnxzz/go-ssdp/ssdp.svg)](https://pkg.go.dev/github.com/lrnxzz/go-ssdp/ssdp)
-[![Go Report Card](https://goreportcard.com/badge/github.com/lrnxzz/go-ssdp)](https://goreportcard.com/report/github.com/lrnxzz/go-ssdp)
 [![release](https://img.shields.io/github/v/release/lrnxzz/go-ssdp)](https://github.com/lrnxzz/go-ssdp/releases/latest)
 [![license](https://img.shields.io/github/license/lrnxzz/go-ssdp)](LICENSE)
 
