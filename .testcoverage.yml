@@ -1,0 +1,5 @@
+profile: coverage.out
+local-prefix: github.com/lrnxzz/go-ssdp
+
+threshold:
+  total: 85

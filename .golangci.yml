@@ -1,0 +1,29 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - errorlint
+    - misspell
+    - nolintlint
+    - unconvert
+    - unparam
+    - usestdlibvars
+  exclusions:
+    rules:
+      # Closing sockets, logs and bodies on the way out has nothing to do with a failed close.
+      - linters:
+          - errcheck
+        text: "Error return value of `.+\\.Close` is not checked"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/lrnxzz/go-ssdp

@@ -1,0 +1,3 @@
+[default.extend-identifiers]
+# The protocol is spelled UPnP; the spell checker splits it into U, Pn and P.
+UPnP = "UPnP"
