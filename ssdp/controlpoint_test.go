@@ -51,11 +51,6 @@ func Test_NewControlPoint_FillsTheDefaults(t *testing.T) {
 }
 
 func Test_Search_RoundsMaxWaitIntoMx(t *testing.T) {
-	group := hostOnlyGroup(t)
-	searcher := newControlPoint(ControlPointConfig{
-		Group: group,
-	})
-
 	tests := map[time.Duration]time.Duration{
 		0:                       time.Second,
 		1500 * time.Millisecond: 2 * time.Second,
@@ -63,6 +58,11 @@ func Test_Search_RoundsMaxWaitIntoMx(t *testing.T) {
 	}
 
 	for maxWait, expected := range tests {
+		group := hostOnlyGroup(t)
+		searcher := newControlPoint(ControlPointConfig{
+			Group: group,
+		})
+
 		current := newTransport(group, nil)
 		listener, _ := openEndpoints(t, current)
 
