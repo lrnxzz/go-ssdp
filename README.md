@@ -4,7 +4,7 @@
 [![coverage](https://raw.githubusercontent.com/lrnxzz/go-ssdp/badges/.badges/main/coverage.svg)](.testcoverage.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lrnxzz/go-ssdp/ssdp.svg)](https://pkg.go.dev/github.com/lrnxzz/go-ssdp/ssdp)
 [![release](https://img.shields.io/github/v/release/lrnxzz/go-ssdp)](https://github.com/lrnxzz/go-ssdp/releases/latest)
-[![license](https://img.shields.io/github/license/lrnxzz/go-ssdp)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 go-ssdp is a Go implementation of the Simple Service Discovery Protocol, the discovery layer of UPnP.
 It follows chapter 1 of the [UPnP Device Architecture 1.1](https://upnp.org/specs/arch/UPnP-arch-DeviceArchitecture-v1.1.pdf)
