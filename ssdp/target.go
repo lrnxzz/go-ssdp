@@ -30,7 +30,7 @@ const (
 	domainPeriod     = "."
 	domainHyphen     = "-"
 
-	StandardDomain = "schemas-upnp-org"
+	standardDomain = "schemas-upnp-org"
 
 	longestTypeName = 64
 )
@@ -63,21 +63,21 @@ type Target struct {
 	version int
 }
 
-func NewAllTarget() Target {
+func newAllTarget() Target {
 	return Target{
 		typ:   TargetAll,
 		value: targetAll,
 	}
 }
 
-func NewRootDeviceTarget() Target {
+func newRootDeviceTarget() Target {
 	return Target{
 		typ:   TargetRootDevice,
 		value: targetRootDevice,
 	}
 }
 
-func NewUuidTarget(uuid string) Target {
+func newUuidTarget(uuid string) Target {
 	return Target{
 		typ:   TargetUuid,
 		value: uuidPrefix + uuid,
@@ -85,16 +85,16 @@ func NewUuidTarget(uuid string) Target {
 	}
 }
 
-func NewDeviceTypeTarget(domain, name string, version int) (Target, error) {
+func newDeviceTypeTarget(domain, name string, version int) (Target, error) {
 	return newTypeTarget(TargetDeviceType, urnDevice, domain, name, version)
 }
 
-func NewServiceTypeTarget(domain, name string, version int) (Target, error) {
+func newServiceTypeTarget(domain, name string, version int) (Target, error) {
 	return newTypeTarget(TargetServiceType, urnService, domain, name, version)
 }
 
 // NewVendorTarget is a target outside the UDA grammar.
-func NewVendorTarget(value string) Target {
+func newVendorTarget(value string) Target {
 	return Target{
 		typ:   TargetVendor,
 		value: value,
@@ -131,32 +131,32 @@ func ParseTarget(value string) (Target, error) {
 	case value == "":
 		return Target{}, fmt.Errorf("%w: empty target", ErrMalformed)
 	case value == targetAll:
-		return NewAllTarget(), nil
+		return newAllTarget(), nil
 	case value == targetRootDevice:
-		return NewRootDeviceTarget(), nil
+		return newRootDeviceTarget(), nil
 	case strings.HasPrefix(value, uuidPrefix):
 		uuid := strings.TrimPrefix(value, uuidPrefix)
 		if uuid == "" {
 			return Target{}, fmt.Errorf("%w: %q has no uuid", ErrMalformed, value)
 		}
 
-		return NewUuidTarget(uuid), nil
+		return newUuidTarget(uuid), nil
 	case strings.HasPrefix(value, urnPrefix):
 		return parseUrnTarget(value), nil
 	default:
-		return NewVendorTarget(value), nil
+		return newVendorTarget(value), nil
 	}
 }
 
 func parseUrnTarget(value string) Target {
 	parts := strings.Split(value, urnSeparator)
 	if len(parts) != urnParts {
-		return NewVendorTarget(value)
+		return newVendorTarget(value)
 	}
 
 	version, err := strconv.Atoi(parts[4])
 	if err != nil {
-		return NewVendorTarget(value)
+		return newVendorTarget(value)
 	}
 
 	var (
@@ -166,15 +166,15 @@ func parseUrnTarget(value string) Target {
 
 	switch parts[2] {
 	case urnDevice:
-		target, typeErr = NewDeviceTypeTarget(parts[1], parts[3], version)
+		target, typeErr = newDeviceTypeTarget(parts[1], parts[3], version)
 	case urnService:
-		target, typeErr = NewServiceTypeTarget(parts[1], parts[3], version)
+		target, typeErr = newServiceTypeTarget(parts[1], parts[3], version)
 	default:
-		return NewVendorTarget(value)
+		return newVendorTarget(value)
 	}
 
 	if typeErr != nil {
-		return NewVendorTarget(value)
+		return newVendorTarget(value)
 	}
 
 	return target

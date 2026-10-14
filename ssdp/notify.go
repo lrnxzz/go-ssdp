@@ -58,18 +58,18 @@ func (a Alive) MarshalBinary() ([]byte, error) {
 	}
 
 	return newWriter().
-		requestLine(MethodNotify).
-		optional(HeaderHost, a.Host).
+		requestLine(methodNotify).
+		optional(headerHost, a.Host).
 		maxAge(a.MaxAge).
-		optional(HeaderLocation, a.Location).
-		field(HeaderNotificationType, a.Target.String()).
-		field(HeaderNotificationSubtype, SubtypeAlive).
-		optional(HeaderServer, a.Server.String()).
-		field(HeaderServiceName, a.ServiceName.String()).
-		number(HeaderBootId, a.BootId).
-		number(HeaderConfigId, a.ConfigId).
-		number(HeaderSearchPort, a.SearchPort).
-		optional(HeaderSecureLocation, a.SecureLocation).
+		optional(headerLocation, a.Location).
+		field(headerNotificationType, a.Target.String()).
+		field(headerNotificationSubtype, subtypeAlive).
+		optional(headerServer, a.Server.String()).
+		field(headerServiceName, a.ServiceName.String()).
+		number(headerBootId, a.BootId).
+		number(headerConfigId, a.ConfigId).
+		number(headerSearchPort, a.SearchPort).
+		optional(headerSecureLocation, a.SecureLocation).
 		extensions(a.Extensions).
 		bytes(), nil
 }
@@ -84,7 +84,7 @@ func (a *Alive) read(f frame) error {
 		return err
 	}
 
-	location, err := f.url(HeaderLocation)
+	location, err := f.url(headerLocation)
 	if err != nil {
 		return err
 	}
@@ -99,22 +99,22 @@ func (a *Alive) read(f frame) error {
 		return err
 	}
 
-	searchPort, err := f.port(HeaderSearchPort)
+	searchPort, err := f.port(headerSearchPort)
 	if err != nil {
 		return err
 	}
 
-	secureLocation, err := f.url(HeaderSecureLocation)
+	secureLocation, err := f.url(headerSecureLocation)
 	if err != nil {
 		return err
 	}
 
 	*a = Alive{
-		Host:           f.header.Get(HeaderHost),
+		Host:           f.header.Get(headerHost),
 		Target:         target,
 		ServiceName:    serviceName,
 		Location:       location,
-		Server:         f.productTokens(HeaderServer),
+		Server:         f.productTokens(headerServer),
 		MaxAge:         maxAge,
 		BootId:         bootId,
 		ConfigId:       configId,
@@ -132,20 +132,20 @@ func (a Alive) Check() error {
 	violations := checkNotification(a.Host, a.Target)
 
 	if a.MaxAge <= 0 {
-		violations = append(violations, violation("%s with max-age is required", HeaderCacheControl))
+		violations = append(violations, violation("%s with max-age is required", headerCacheControl))
 	}
 
 	if a.Location == "" {
-		violations = append(violations, violation("%s is required", HeaderLocation))
+		violations = append(violations, violation("%s is required", headerLocation))
 	}
 
 	if a.Server.IsZero() {
-		violations = append(violations, violation("%s is required", HeaderServer))
+		violations = append(violations, violation("%s is required", headerServer))
 	}
 
 	violations = append(violations,
-		requiredSince(rules, Version11, a.BootId.IsPresent(), HeaderBootId),
-		requiredSince(rules, Version11, a.ConfigId.IsPresent(), HeaderConfigId),
+		requiredSince(rules, Version11, a.BootId.IsPresent(), headerBootId),
+		requiredSince(rules, Version11, a.ConfigId.IsPresent(), headerConfigId),
 	)
 
 	return violationsOf(violations)
@@ -161,13 +161,13 @@ func (b ByeBye) MarshalBinary() ([]byte, error) {
 	}
 
 	return newWriter().
-		requestLine(MethodNotify).
-		optional(HeaderHost, b.Host).
-		field(HeaderNotificationType, b.Target.String()).
-		field(HeaderNotificationSubtype, SubtypeByeBye).
-		field(HeaderServiceName, b.ServiceName.String()).
-		number(HeaderBootId, b.BootId).
-		number(HeaderConfigId, b.ConfigId).
+		requestLine(methodNotify).
+		optional(headerHost, b.Host).
+		field(headerNotificationType, b.Target.String()).
+		field(headerNotificationSubtype, subtypeByeBye).
+		field(headerServiceName, b.ServiceName.String()).
+		number(headerBootId, b.BootId).
+		number(headerConfigId, b.ConfigId).
 		extensions(b.Extensions).
 		bytes(), nil
 }
@@ -188,7 +188,7 @@ func (b *ByeBye) read(f frame) error {
 	}
 
 	*b = ByeBye{
-		Host:        f.header.Get(HeaderHost),
+		Host:        f.header.Get(headerHost),
 		Target:      target,
 		ServiceName: serviceName,
 		BootId:      bootId,
@@ -214,17 +214,17 @@ func (u Update) MarshalBinary() ([]byte, error) {
 	}
 
 	return newWriter().
-		requestLine(MethodNotify).
-		optional(HeaderHost, u.Host).
-		optional(HeaderLocation, u.Location).
-		field(HeaderNotificationType, u.Target.String()).
-		field(HeaderNotificationSubtype, SubtypeUpdate).
-		field(HeaderServiceName, u.ServiceName.String()).
-		number(HeaderBootId, u.BootId).
-		number(HeaderConfigId, u.ConfigId).
-		number(HeaderNextBootId, u.NextBootId).
-		number(HeaderSearchPort, u.SearchPort).
-		optional(HeaderSecureLocation, u.SecureLocation).
+		requestLine(methodNotify).
+		optional(headerHost, u.Host).
+		optional(headerLocation, u.Location).
+		field(headerNotificationType, u.Target.String()).
+		field(headerNotificationSubtype, subtypeUpdate).
+		field(headerServiceName, u.ServiceName.String()).
+		number(headerBootId, u.BootId).
+		number(headerConfigId, u.ConfigId).
+		number(headerNextBootId, u.NextBootId).
+		number(headerSearchPort, u.SearchPort).
+		optional(headerSecureLocation, u.SecureLocation).
 		extensions(u.Extensions).
 		bytes(), nil
 }
@@ -239,7 +239,7 @@ func (u *Update) read(f frame) error {
 		return err
 	}
 
-	location, err := f.url(HeaderLocation)
+	location, err := f.url(headerLocation)
 	if err != nil {
 		return err
 	}
@@ -249,23 +249,23 @@ func (u *Update) read(f frame) error {
 		return err
 	}
 
-	nextBootId, err := f.counter(HeaderNextBootId)
+	nextBootId, err := f.counter(headerNextBootId)
 	if err != nil {
 		return err
 	}
 
-	searchPort, err := f.port(HeaderSearchPort)
+	searchPort, err := f.port(headerSearchPort)
 	if err != nil {
 		return err
 	}
 
-	secureLocation, err := f.url(HeaderSecureLocation)
+	secureLocation, err := f.url(headerSecureLocation)
 	if err != nil {
 		return err
 	}
 
 	*u = Update{
-		Host:           f.header.Get(HeaderHost),
+		Host:           f.header.Get(headerHost),
 		Target:         target,
 		ServiceName:    serviceName,
 		Location:       location,
@@ -285,20 +285,20 @@ func (u Update) Check() error {
 	violations := checkNotification(u.Host, u.Target)
 
 	if u.Location == "" {
-		violations = append(violations, violation("%s is required", HeaderLocation))
+		violations = append(violations, violation("%s is required", headerLocation))
 	}
 
 	violations = append(violations,
-		requiredSince(Version11, Version11, u.BootId.IsPresent(), HeaderBootId),
-		requiredSince(Version11, Version11, u.ConfigId.IsPresent(), HeaderConfigId),
-		requiredSince(Version11, Version11, u.NextBootId.IsPresent(), HeaderNextBootId),
+		requiredSince(Version11, Version11, u.BootId.IsPresent(), headerBootId),
+		requiredSince(Version11, Version11, u.ConfigId.IsPresent(), headerConfigId),
+		requiredSince(Version11, Version11, u.NextBootId.IsPresent(), headerNextBootId),
 	)
 
 	bootId, hasBootId := u.BootId.Get()
 	nextBootId, hasNextBootId := u.NextBootId.Get()
 
 	if hasBootId && hasNextBootId && nextBootId <= bootId {
-		violations = append(violations, violation("%s %d is not greater than %s %d", HeaderNextBootId, nextBootId, HeaderBootId, bootId))
+		violations = append(violations, violation("%s %d is not greater than %s %d", headerNextBootId, nextBootId, headerBootId, bootId))
 	}
 
 	return violationsOf(violations)
@@ -313,7 +313,7 @@ func checkIdentity(target Target, serviceName ServiceName) error {
 }
 
 func readIdentity(f frame) (Target, ServiceName, error) {
-	target, err := f.target(HeaderNotificationType)
+	target, err := f.target(headerNotificationType)
 	if err != nil {
 		return Target{}, ServiceName{}, err
 	}
@@ -327,12 +327,12 @@ func readIdentity(f frame) (Target, ServiceName, error) {
 }
 
 func readCounters(f frame) (Optional[int], Optional[int], error) {
-	bootId, err := f.counter(HeaderBootId)
+	bootId, err := f.counter(headerBootId)
 	if err != nil {
 		return Optional[int]{}, Optional[int]{}, err
 	}
 
-	configId, err := f.counter(HeaderConfigId)
+	configId, err := f.counter(headerConfigId)
 	if err != nil {
 		return Optional[int]{}, Optional[int]{}, err
 	}
@@ -344,11 +344,11 @@ func checkNotification(host string, target Target) []error {
 	violations := make([]error, 0)
 
 	if host == "" {
-		violations = append(violations, violation("%s is required", HeaderHost))
+		violations = append(violations, violation("%s is required", headerHost))
 	}
 
 	if target.typ == TargetAll {
-		violations = append(violations, violation("%s cannot be %s", HeaderNotificationType, targetAll))
+		violations = append(violations, violation("%s cannot be %s", headerNotificationType, targetAll))
 	}
 
 	return violations

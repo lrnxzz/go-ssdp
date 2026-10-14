@@ -11,7 +11,7 @@ func Test_ParseVersion(t *testing.T) {
 		"1.0":  Version10,
 		"1.1":  Version11,
 		"2.0":  Version20,
-		"2.10": NewVersion(2, 10),
+		"2.10": newVersion(2, 10),
 	}
 
 	for value, expected := range tests {
@@ -85,7 +85,7 @@ func Test_Version_String(t *testing.T) {
 	tests := map[Version]string{
 		Version10:         "1.0",
 		Version11:         "1.1",
-		NewVersion(2, 10): "2.10",
+		newVersion(2, 10): "2.10",
 	}
 
 	for version, expected := range tests {
@@ -100,7 +100,7 @@ func Test_Version_ParsesWhatItPrints(t *testing.T) {
 		Version10,
 		Version11,
 		Version20,
-		NewVersion(2, 10),
+		newVersion(2, 10),
 	}
 
 	for _, version := range versions {
@@ -126,7 +126,7 @@ func Test_Version_AMessageWithoutVersionFollowsUda10(t *testing.T) {
 }
 
 func Test_Version_Parts(t *testing.T) {
-	version := NewVersion(2, 10)
+	version := newVersion(2, 10)
 
 	if version.Major() != 2 || version.Minor() != 10 {
 		t.Errorf("Expected 2 and 10, got %d and %d", version.Major(), version.Minor())

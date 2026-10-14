@@ -33,24 +33,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	mediaServer, err := ssdp.NewDeviceTypeTarget(ssdp.StandardDomain, "MediaServer", 1)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	controlPoint, err := ssdp.NewControlPoint(ssdp.ControlPointConfig{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	locations := make(map[string]string)
 
-	for answer, err := range controlPoint.Search(ctx, mediaServer, 3*time.Second) {
+	for answer, err := range ssdp.Search(ctx, "urn:schemas-upnp-org:device:MediaServer:1", 3*time.Second) {
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		locations[answer.Message.ServiceName.Uuid()] = answer.Message.Location
+		locations[answer.ServiceName.Uuid()] = answer.Location
 	}
 
 	uuids := slices.Sorted(maps.Keys(locations))

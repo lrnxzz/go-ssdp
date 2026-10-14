@@ -13,7 +13,7 @@ type ServiceName struct {
 	target Target
 }
 
-func NewServiceName(uuid string, target Target) ServiceName {
+func newServiceName(uuid string, target Target) ServiceName {
 	if target.typ == TargetUuid {
 		target = Target{}
 	}
@@ -37,7 +37,7 @@ func ParseServiceName(value string) (ServiceName, error) {
 	}
 
 	if !hasTarget {
-		return NewServiceName(uuid, Target{}), nil
+		return newServiceName(uuid, Target{}), nil
 	}
 
 	target, err := ParseTarget(targetText)
@@ -45,7 +45,7 @@ func ParseServiceName(value string) (ServiceName, error) {
 		return ServiceName{}, err
 	}
 
-	return NewServiceName(uuid, target), nil
+	return newServiceName(uuid, target), nil
 }
 
 func (n ServiceName) Uuid() string {

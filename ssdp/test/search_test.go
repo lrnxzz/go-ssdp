@@ -43,7 +43,7 @@ func Test_Integration_Search_FindsEveryAdvertisement(t *testing.T) {
 	for name, initialize := range servers() {
 		t.Run(name, func(t *testing.T) {
 			address := start(t, initialize)
-			responses := searchFrom(t, address, ssdp.NewAllTarget())
+			responses := searchFrom(t, address, "ssdp:all")
 
 			uuid := responses[0].ServiceName.Uuid()
 			targets := make([]string, 0, len(responses))
@@ -72,10 +72,13 @@ func Test_Integration_Search_PairsServiceNameWithTarget(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			address := start(t, initialize)
 
-			for _, response := range searchFrom(t, address, ssdp.NewAllTarget()) {
-				expected := ssdp.NewServiceName(response.ServiceName.Uuid(), response.Target)
+			for _, response := range searchFrom(t, address, "ssdp:all") {
+				expected := "uuid:" + response.ServiceName.Uuid()
+				if response.Target.Type() != ssdp.TargetUuid {
+					expected += "::" + response.Target.String()
+				}
 
-				if response.ServiceName != expected {
+				if response.ServiceName.String() != expected {
 					t.Errorf("Expected USN %s for ST %s, got %s", expected, response.Target, response.ServiceName)
 				}
 			}
@@ -88,7 +91,7 @@ func Test_Integration_Search_AnswersConformToTheirVersion(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			address := start(t, initialize)
 
-			for _, response := range searchFrom(t, address, ssdp.NewAllTarget()) {
+			for _, response := range searchFrom(t, address, "ssdp:all") {
 				if response.Server.Upnp().IsZero() {
 					t.Errorf("Expected %s to declare a UPnP version, got SERVER %q", name, response.Server)
 				}
@@ -105,7 +108,7 @@ func Test_Integration_Search_LocationDescribesTheSameDevice(t *testing.T) {
 	for name, initialize := range servers() {
 		t.Run(name, func(t *testing.T) {
 			address := start(t, initialize)
-			response := searchFrom(t, address, mustTarget(t, mediaServer))[0]
+			response := searchFrom(t, address, mediaServer)[0]
 
 			described := describe(t, response.Location)
 
@@ -125,7 +128,7 @@ func Test_Integration_Search_EchoesTheSearchedTarget(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			address := start(t, initialize)
 
-			for _, response := range searchFrom(t, address, mustTarget(t, mediaServer)) {
+			for _, response := range searchFrom(t, address, mediaServer) {
 				if response.Target.String() != mediaServer {
 					t.Errorf("Expected ST %s, got %s", mediaServer, response.Target)
 				}
@@ -138,17 +141,22 @@ func Test_Integration_SearchUnicast_FollowsTheDeclaredVersion(t *testing.T) {
 	for name, initialize := range servers() {
 		t.Run(name, func(t *testing.T) {
 			address := start(t, initialize)
-			declared := searchFrom(t, address, ssdp.NewRootDeviceTarget())[0].Server.Upnp()
+			declared := searchFrom(t, address, "upnp:rootdevice")[0].Server.Upnp()
+
+			controlPoint, err := ssdp.NewControlPoint(ssdp.ControlPointConfig{})
+			if err != nil {
+				t.Fatalf("Failed to create control point: %v", err)
+			}
 
 			started := time.Now()
 			answered := false
 
-			for received, err := range newControlPoint(t).SearchUnicast(t.Context(), netip.AddrPortFrom(address, 1900), ssdp.NewRootDeviceTarget()) {
+			for response, err := range controlPoint.SearchUnicast(t.Context(), netip.AddrPortFrom(address, 1900), "upnp:rootdevice") {
 				if err != nil {
 					t.Fatalf("Failed to search %s: %v", address, err)
 				}
 
-				answered = answered || received.From.Addr() == address
+				answered = answered || response.From.Addr() == address
 			}
 
 			if declared.AtLeast(ssdp.Version11) && !answered {
@@ -179,29 +187,18 @@ func start(t *testing.T, initialize server) netip.Addr {
 	return address
 }
 
-func newControlPoint(t *testing.T) ssdp.ControlPoint {
-	t.Helper()
-
-	controlPoint, err := ssdp.NewControlPoint(ssdp.ControlPointConfig{})
-	if err != nil {
-		t.Fatalf("Failed to create control point: %v", err)
-	}
-
-	return controlPoint
-}
-
-func searchFrom(t *testing.T, address netip.Addr, target ssdp.Target) []ssdp.SearchResponse {
+func searchFrom(t *testing.T, address netip.Addr, target string) []ssdp.SearchResponse {
 	t.Helper()
 
 	responses := make([]ssdp.SearchResponse, 0)
 
-	for received, err := range newControlPoint(t).Search(t.Context(), target, searchWait) {
+	for response, err := range ssdp.Search(t.Context(), target, searchWait) {
 		if err != nil {
 			t.Fatalf("Failed to search: %v", err)
 		}
 
-		if received.From.Addr() == address {
-			responses = append(responses, received.Message)
+		if response.From.Addr() == address {
+			responses = append(responses, response)
 		}
 	}
 
@@ -232,15 +229,4 @@ func describe(t *testing.T, location string) description {
 	}
 
 	return described
-}
-
-func mustTarget(t *testing.T, value string) ssdp.Target {
-	t.Helper()
-
-	target, err := ssdp.ParseTarget(value)
-	if err != nil {
-		t.Fatalf("Failed to parse target %q: %v", value, err)
-	}
-
-	return target
 }

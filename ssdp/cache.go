@@ -76,8 +76,8 @@ func newCache(watched Target) *cache {
 	}
 }
 
-func (c *cache) apply(received Received[Message], now time.Time) []Event {
-	switch message := received.Message.(type) {
+func (c *cache) apply(datagram received, now time.Time) []Event {
+	switch message := datagram.message.(type) {
 	case SearchResponse:
 		return c.see(message.Target, message.MaxAge, now, Presence{
 			Uuid:       message.ServiceName.Uuid(),
@@ -85,8 +85,8 @@ func (c *cache) apply(received Received[Message], now time.Time) []Event {
 			Server:     message.Server,
 			BootId:     message.BootId,
 			ConfigId:   message.ConfigId,
-			From:       received.From,
-			Interface:  received.Interface,
+			From:       datagram.from,
+			Interface:  datagram.interfaceName,
 			Extensions: message.Extensions,
 		})
 	case Alive:
@@ -96,8 +96,8 @@ func (c *cache) apply(received Received[Message], now time.Time) []Event {
 			Server:     message.Server,
 			BootId:     message.BootId,
 			ConfigId:   message.ConfigId,
-			From:       received.From,
-			Interface:  received.Interface,
+			From:       datagram.from,
+			Interface:  datagram.interfaceName,
 			Extensions: message.Extensions,
 		})
 	case ByeBye:
@@ -115,7 +115,7 @@ func (c *cache) see(target Target, maxAge time.Duration, now time.Time, observed
 	}
 
 	if maxAge <= 0 {
-		maxAge = MaxAgeFloor
+		maxAge = maxAgeFloor
 	}
 
 	entry, known := c.devices[observed.Uuid]

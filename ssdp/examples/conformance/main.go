@@ -27,26 +27,21 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	controlPoint, err := ssdp.NewControlPoint(ssdp.ControlPointConfig{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	reports := make(map[string]report)
 
-	for answer, err := range controlPoint.Search(ctx, ssdp.NewAllTarget(), 3*time.Second) {
+	for answer, err := range ssdp.Search(ctx, "ssdp:all", 3*time.Second) {
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		uuid := answer.Message.ServiceName.Uuid()
+		uuid := answer.ServiceName.Uuid()
 
 		current := reports[uuid]
 		current.from = answer.From.Addr().String()
-		current.server = answer.Message.Server
+		current.server = answer.Server
 		current.answers++
 
-		if violations, ok := errors.AsType[ssdp.Violations](answer.Message.Check()); ok {
+		if violations, ok := errors.AsType[ssdp.Violations](answer.Check()); ok {
 			for _, violation := range violations {
 				if !slices.Contains(current.violations, violation.Error()) {
 					current.violations = append(current.violations, violation.Error())

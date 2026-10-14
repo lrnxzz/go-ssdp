@@ -92,8 +92,8 @@ func Test_Alive_Check_FollowsTheDeclaredVersion(t *testing.T) {
 
 func Test_Alive_Check_ReportsEveryMissingField(t *testing.T) {
 	alive := Alive{
-		Target:      NewRootDeviceTarget(),
-		ServiceName: NewServiceName(exampleUuid, NewRootDeviceTarget()),
+		Target:      newRootDeviceTarget(),
+		ServiceName: newServiceName(exampleUuid, newRootDeviceTarget()),
 	}
 
 	expectViolations(t, alive, 4)
@@ -101,13 +101,13 @@ func Test_Alive_Check_ReportsEveryMissingField(t *testing.T) {
 
 func Test_Notifications_Check_RejectSsdpAllAsNt(t *testing.T) {
 	alive := exampleAlive(t)
-	alive.Target = NewAllTarget()
+	alive.Target = newAllTarget()
 
 	byeBye := exampleByeBye(t)
-	byeBye.Target = NewAllTarget()
+	byeBye.Target = newAllTarget()
 
 	update := exampleUpdate(t)
-	update.Target = NewAllTarget()
+	update.Target = newAllTarget()
 
 	notifications := []Message{
 		alive,
@@ -153,10 +153,10 @@ func Test_Update_Check_RequiresItsCounters(t *testing.T) {
 func Test_Notifications_MarshalBinary_RefuseMissingIdentity(t *testing.T) {
 	notifications := []Message{
 		Alive{
-			Target: NewRootDeviceTarget(),
+			Target: newRootDeviceTarget(),
 		},
 		ByeBye{
-			ServiceName: NewServiceName(exampleUuid, NewRootDeviceTarget()),
+			ServiceName: newServiceName(exampleUuid, newRootDeviceTarget()),
 		},
 		Update{},
 	}

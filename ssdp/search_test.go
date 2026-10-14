@@ -34,13 +34,13 @@ const uda20Search = "M-SEARCH * HTTP/1.1\r\n" +
 	"\r\n"
 
 func Test_Search_MarshalBinary_WritesTheUdaLayout(t *testing.T) {
-	unicast := Search{
+	unicast := SearchRequest{
 		Host:      "192.0.2.20:1900",
-		Target:    NewRootDeviceTarget(),
+		Target:    newRootDeviceTarget(),
 		UserAgent: mustProductTokens(t, exampleServer),
 	}
 
-	uda20 := Search{
+	uda20 := SearchRequest{
 		Host:      MulticastAddress,
 		Target:    mustTarget(t, exampleDevice),
 		MaxWait:   time.Second,
@@ -51,7 +51,7 @@ func Test_Search_MarshalBinary_WritesTheUdaLayout(t *testing.T) {
 		TcpPort:          NewOptional(49154),
 	}
 
-	tests := map[string]Search{
+	tests := map[string]SearchRequest{
 		udaSearch:        exampleSearch(t),
 		udaUnicastSearch: unicast,
 		uda20Search:      uda20,
@@ -65,7 +65,7 @@ func Test_Search_MarshalBinary_WritesTheUdaLayout(t *testing.T) {
 }
 
 func Test_Search_UnmarshalBinary_ReadsEveryField(t *testing.T) {
-	var search Search
+	var search SearchRequest
 
 	if err := search.UnmarshalBinary([]byte(uda20Search)); err != nil {
 		t.Fatalf("Failed to unmarshal: %v", err)
@@ -94,16 +94,16 @@ func Test_Search_RoundTrip(t *testing.T) {
 	}
 
 	for _, packet := range searches {
-		if got := string(marshal(t, mustDecode[Search](t, []byte(packet)))); got != packet {
+		if got := string(marshal(t, mustDecode[SearchRequest](t, []byte(packet)))); got != packet {
 			t.Errorf("Expected\n%q\ngot\n%q", packet, got)
 		}
 	}
 }
 
 func Test_Search_MarshalBinary_RefusesWhatCannotBeEncoded(t *testing.T) {
-	tests := map[string]Search{
+	tests := map[string]SearchRequest{
 		"no host": {
-			Target:  NewAllTarget(),
+			Target:  newAllTarget(),
 			MaxWait: time.Second,
 		},
 		"no target": {
@@ -112,12 +112,12 @@ func Test_Search_MarshalBinary_RefusesWhatCannotBeEncoded(t *testing.T) {
 		},
 		"fraction of a second": {
 			Host:    MulticastAddress,
-			Target:  NewAllTarget(),
+			Target:  newAllTarget(),
 			MaxWait: 1500 * time.Millisecond,
 		},
 		"negative wait": {
 			Host:    MulticastAddress,
-			Target:  NewAllTarget(),
+			Target:  newAllTarget(),
 			MaxWait: -time.Second,
 		},
 	}
@@ -173,7 +173,7 @@ func Test_Search_IsMulticast(t *testing.T) {
 	}
 
 	for host, expected := range tests {
-		search := Search{
+		search := SearchRequest{
 			Host: host,
 		}
 
@@ -191,22 +191,22 @@ func Test_Search_Check(t *testing.T) {
 	}
 
 	for _, packet := range conformant {
-		expectConformant(t, mustDecode[Search](t, []byte(packet)))
+		expectConformant(t, mustDecode[SearchRequest](t, []byte(packet)))
 	}
 
 	withoutMaxWait := exampleSearch(t)
 	withoutMaxWait.MaxWait = 0
 	expectViolations(t, withoutMaxWait, 1)
 
-	withoutName := mustDecode[Search](t, []byte(uda20Search))
+	withoutName := mustDecode[SearchRequest](t, []byte(uda20Search))
 	withoutName.ControlPointName = ""
 	expectViolations(t, withoutName, 1)
 
-	expectViolations(t, Search{}, 2)
+	expectViolations(t, SearchRequest{}, 2)
 }
 
 func Test_Search_Type(t *testing.T) {
-	if got := (Search{}).Type(); got != MessageSearch {
-		t.Errorf("Expected %s, got %s", MessageSearch, got)
+	if got := (SearchRequest{}).Type(); got != MessageSearchRequest {
+		t.Errorf("Expected %s, got %s", MessageSearchRequest, got)
 	}
 }

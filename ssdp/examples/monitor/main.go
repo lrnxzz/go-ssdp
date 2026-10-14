@@ -17,14 +17,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	controlPoint, err := ssdp.NewControlPoint(ssdp.ControlPointConfig{})
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	online := make(map[string]ssdp.Presence)
 
-	for event, err := range controlPoint.Watch(ctx, ssdp.NewAllTarget()) {
+	for event, err := range ssdp.Watch(ctx, "ssdp:all") {
 		if err != nil {
 			log.Fatal(err)
 		}

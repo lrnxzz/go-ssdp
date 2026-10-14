@@ -35,18 +35,21 @@ func Test_Integration_Device_IsFoundByAnotherControlPoint(t *testing.T) {
 	}
 
 	expected := map[string]string{
-		ssdp.HeaderSearchTarget: basicDevice,
-		ssdp.HeaderLocation:     location,
-		ssdp.HeaderBootId:       "1",
-		ssdp.HeaderConfigId:     "1",
-		ssdp.HeaderExt:          "",
-		"_udn":                  "uuid:" + deviceUuid,
+		"ST":                basicDevice,
+		"LOCATION":          location,
+		"CONFIGID.UPNP.ORG": "1",
+		"EXT":               "",
+		"_udn":              "uuid:" + deviceUuid,
 	}
 
 	for field, value := range expected {
 		if got, ok := answer[field]; !ok || got != value {
 			t.Errorf("Expected %s = %q, got %q", field, value, got)
 		}
+	}
+
+	if answer["BOOTID.UPNP.ORG"] == "" {
+		t.Errorf("Expected a BOOTID.UPNP.ORG, got %v", answer)
 	}
 }
 
@@ -65,19 +68,19 @@ func Test_Integration_Device_AnnouncesItselfAndSaysByeBye(t *testing.T) {
 
 	device, _ := newDevice(t)
 
-	awaitSubtype(t, client, ssdp.SubtypeAlive)
+	awaitSubtype(t, client, "ssdp:alive")
 
 	if err := device.Close(); err != nil {
 		t.Fatalf("Failed to close device: %v", err)
 	}
 
-	messages := awaitSubtype(t, client, ssdp.SubtypeByeBye)
+	messages := awaitSubtype(t, client, "ssdp:byebye")
 
 	announced := make([]string, 0)
 
 	for _, message := range messages {
-		if message[ssdp.HeaderNotificationSubtype] == ssdp.SubtypeAlive {
-			announced = append(announced, message[ssdp.HeaderNotificationType])
+		if message["NTS"] == "ssdp:alive" {
+			announced = append(announced, message["NT"])
 		}
 	}
 
@@ -117,15 +120,15 @@ func newDevice(t *testing.T) (ssdp.Device, string) {
 	}
 
 	location := fmt.Sprintf("http://%s:49152/description.xml", gateway)
-	server := ssdp.NewProductTokens(ssdp.NewProduct("Linux", "6.6"), ssdp.Version11, ssdp.NewProduct("go-ssdp", "test"))
 
 	device, err := ssdp.NewDevice(ssdp.DeviceConfig{
-		Advertisements: ssdp.NewRootDeviceAdvertisements(deviceUuid, mustTarget(t, basicDevice)),
-		Location:       location,
-		Server:         server,
-		MaxAge:         ssdp.MaxAgeFloor,
-		BootId:         ssdp.NewOptional(1),
-		ConfigId:       ssdp.NewOptional(1),
+		Uuid: deviceUuid,
+		Targets: []string{
+			"upnp:rootdevice",
+			basicDevice,
+		},
+		Location: location,
+		ConfigId: 1,
 	})
 	if err != nil {
 		t.Fatalf("Failed to start device: %v", err)
@@ -160,13 +163,13 @@ func awaitSubtype(t *testing.T, client *testcontainers.DockerContainer, subtype 
 
 func isOurs(subtype string) func(map[string]string) bool {
 	return func(message map[string]string) bool {
-		return message[ssdp.HeaderNotificationSubtype] == subtype && message["_udn"] == "uuid:"+deviceUuid
+		return message["NTS"] == subtype && message["_udn"] == "uuid:"+deviceUuid
 	}
 }
 
 func messageFor(messages []map[string]string, serviceName string) (map[string]string, bool) {
 	for _, message := range messages {
-		if message[ssdp.HeaderServiceName] == serviceName {
+		if message["USN"] == serviceName {
 			return message, true
 		}
 	}

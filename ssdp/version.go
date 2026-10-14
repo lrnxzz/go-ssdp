@@ -9,9 +9,9 @@ import (
 const versionSeparator = "."
 
 var (
-	Version10 = NewVersion(1, 0)
-	Version11 = NewVersion(1, 1)
-	Version20 = NewVersion(2, 0)
+	Version10 = newVersion(1, 0)
+	Version11 = newVersion(1, 1)
+	Version20 = newVersion(2, 0)
 )
 
 // Version is a UPnP Device Architecture version, as SERVER and USER-AGENT declare it.
@@ -20,7 +20,7 @@ type Version struct {
 	minor int
 }
 
-func NewVersion(major, minor int) Version {
+func newVersion(major, minor int) Version {
 	return Version{
 		major: major,
 		minor: minor,
@@ -40,7 +40,7 @@ func ParseVersion(value string) (Version, error) {
 		return Version{}, fmt.Errorf("%w: version %q is not major.minor", ErrMalformed, value)
 	}
 
-	return NewVersion(major, minor), nil
+	return newVersion(major, minor), nil
 }
 
 func (v Version) Major() int {

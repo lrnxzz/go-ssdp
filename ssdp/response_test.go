@@ -87,8 +87,8 @@ func Test_SearchResponse_Check_FollowsTheDeclaredVersion(t *testing.T) {
 
 func Test_SearchResponse_MarshalBinary_AlwaysCarriesExt(t *testing.T) {
 	response := SearchResponse{
-		Target:      NewRootDeviceTarget(),
-		ServiceName: NewServiceName(exampleUuid, NewRootDeviceTarget()),
+		Target:      newRootDeviceTarget(),
+		ServiceName: newServiceName(exampleUuid, newRootDeviceTarget()),
 	}
 
 	if data := marshal(t, response); !bytes.Contains(data, []byte("\r\nEXT: \r\n")) {
@@ -104,8 +104,8 @@ func Test_SearchResponse_Check_NoticesAMissingExt(t *testing.T) {
 
 func Test_SearchResponse_Check_ReportsEveryMissingField(t *testing.T) {
 	response := SearchResponse{
-		Target:      NewRootDeviceTarget(),
-		ServiceName: NewServiceName(exampleUuid, NewRootDeviceTarget()),
+		Target:      newRootDeviceTarget(),
+		ServiceName: newServiceName(exampleUuid, newRootDeviceTarget()),
 	}
 
 	expectViolations(t, response, 3)
@@ -134,10 +134,10 @@ func Test_SearchResponse_UnmarshalBinary_RejectsBrokenFields(t *testing.T) {
 func Test_SearchResponse_MarshalBinary_RefusesMissingIdentity(t *testing.T) {
 	tests := map[string]SearchResponse{
 		"no target": {
-			ServiceName: NewServiceName(exampleUuid, NewRootDeviceTarget()),
+			ServiceName: newServiceName(exampleUuid, newRootDeviceTarget()),
 		},
 		"no service name": {
-			Target: NewRootDeviceTarget(),
+			Target: newRootDeviceTarget(),
 		},
 	}
 

@@ -52,7 +52,7 @@ func Test_ParseServiceName_RejectsWhatIsNotAUsn(t *testing.T) {
 }
 
 func Test_NewServiceName_LeavesTheUuidTargetOut(t *testing.T) {
-	serviceName := NewServiceName(exampleUuid, NewUuidTarget(exampleUuid))
+	serviceName := newServiceName(exampleUuid, newUuidTarget(exampleUuid))
 
 	if got := serviceName.String(); got != "uuid:"+exampleUuid {
 		t.Errorf("Expected uuid:%s, got %s", exampleUuid, got)
@@ -64,7 +64,7 @@ func Test_NewServiceName_LeavesTheUuidTargetOut(t *testing.T) {
 }
 
 func Test_NewServiceName_JoinsUuidAndTarget(t *testing.T) {
-	serviceName := NewServiceName(exampleUuid, NewRootDeviceTarget())
+	serviceName := newServiceName(exampleUuid, newRootDeviceTarget())
 
 	if got := serviceName.String(); got != "uuid:"+exampleUuid+"::upnp:rootdevice" {
 		t.Errorf("Expected uuid:%s::upnp:rootdevice, got %s", exampleUuid, got)
@@ -77,7 +77,7 @@ func Test_NewServiceName_JoinsUuidAndTarget(t *testing.T) {
 }
 
 func Test_ServiceName_IsZero(t *testing.T) {
-	if !(ServiceName{}).IsZero() || NewServiceName(exampleUuid, Target{}).IsZero() {
+	if !(ServiceName{}).IsZero() || newServiceName(exampleUuid, Target{}).IsZero() {
 		t.Error("Expected only the zero service name to be zero")
 	}
 }

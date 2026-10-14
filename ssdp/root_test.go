@@ -16,10 +16,10 @@ const (
 	exampleVendor   = "vendor:service"
 )
 
-func exampleSearch(t *testing.T) Search {
+func exampleSearch(t *testing.T) SearchRequest {
 	t.Helper()
 
-	return Search{
+	return SearchRequest{
 		Host:      MulticastAddress,
 		Target:    mustTarget(t, exampleDevice),
 		MaxWait:   2 * time.Second,
@@ -32,10 +32,10 @@ func exampleResponse(t *testing.T) SearchResponse {
 
 	return SearchResponse{
 		Target:      mustTarget(t, exampleDevice),
-		ServiceName: NewServiceName(exampleUuid, mustTarget(t, exampleDevice)),
+		ServiceName: newServiceName(exampleUuid, mustTarget(t, exampleDevice)),
 		Location:    exampleLocation,
 		Server:      mustProductTokens(t, exampleServer),
-		MaxAge:      MaxAgeFloor,
+		MaxAge:      maxAgeFloor,
 		Date:        time.Date(2026, time.October, 13, 12, 0, 0, 0, time.UTC),
 		BootId:      NewOptional(1),
 		ConfigId:    NewOptional(7),
@@ -49,10 +49,10 @@ func exampleAlive(t *testing.T) Alive {
 	return Alive{
 		Host:        MulticastAddress,
 		Target:      mustTarget(t, exampleDevice),
-		ServiceName: NewServiceName(exampleUuid, mustTarget(t, exampleDevice)),
+		ServiceName: newServiceName(exampleUuid, mustTarget(t, exampleDevice)),
 		Location:    exampleLocation,
 		Server:      mustProductTokens(t, exampleServer),
-		MaxAge:      MaxAgeFloor,
+		MaxAge:      maxAgeFloor,
 		BootId:      NewOptional(1),
 		ConfigId:    NewOptional(7),
 		SearchPort:  NewOptional(49153),
@@ -65,7 +65,7 @@ func exampleByeBye(t *testing.T) ByeBye {
 	return ByeBye{
 		Host:        MulticastAddress,
 		Target:      mustTarget(t, exampleDevice),
-		ServiceName: NewServiceName(exampleUuid, mustTarget(t, exampleDevice)),
+		ServiceName: newServiceName(exampleUuid, mustTarget(t, exampleDevice)),
 		BootId:      NewOptional(1),
 		ConfigId:    NewOptional(7),
 	}
@@ -77,7 +77,7 @@ func exampleUpdate(t *testing.T) Update {
 	return Update{
 		Host:        MulticastAddress,
 		Target:      mustTarget(t, exampleDevice),
-		ServiceName: NewServiceName(exampleUuid, mustTarget(t, exampleDevice)),
+		ServiceName: newServiceName(exampleUuid, mustTarget(t, exampleDevice)),
 		Location:    exampleLocation,
 		BootId:      NewOptional(1),
 		ConfigId:    NewOptional(7),

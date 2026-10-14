@@ -13,86 +13,124 @@ import (
 
 // ControlPoint searches the network for devices and keeps track of them.
 type ControlPoint interface {
-	// Search multicasts an M-SEARCH and yields every answer until maxWait, plus a grace period, passes.
-	Search(ctx context.Context, target Target, maxWait time.Duration) iter.Seq2[Received[SearchResponse], error]
+	// Search multicasts an M-SEARCH and yields each answer once until maxWait, plus a grace period, passes.
+	Search(ctx context.Context, target string, maxWait time.Duration) iter.Seq2[SearchResponse, error]
 
 	// SearchUnicast asks a single device, at port 1900 or the SEARCHPORT.UPNP.ORG it announced.
-	SearchUnicast(ctx context.Context, device netip.AddrPort, target Target) iter.Seq2[Received[SearchResponse], error]
+	SearchUnicast(ctx context.Context, device netip.AddrPort, target string) iter.Seq2[SearchResponse, error]
 
 	// Watch yields every change to the cache of devices announcing target until ctx ends.
-	Watch(ctx context.Context, target Target) iter.Seq2[Event, error]
+	Watch(ctx context.Context, target string) iter.Seq2[Event, error]
 }
 
 type ControlPointConfig struct {
 	// Group is DefaultGroup when zero.
 	Group Group
 
-	UserAgent ProductTokens
+	// UserAgent is built from the platform when empty.
+	UserAgent string
 
 	// Name and Uuid go out as CPFN.UPNP.ORG and CPUUID.UPNP.ORG.
 	Name string
 	Uuid string
+
+	// Logger is slog.Default() when nil.
+	Logger *slog.Logger
 }
 
 func (c ControlPointConfig) Validate() error {
-	if c.UserAgent.Upnp().AtLeast(Version20) && c.Name == "" {
-		return fmt.Errorf("UDA %s requires a control point name", c.UserAgent.Upnp())
+	if c.UserAgent == "" {
+		return nil
+	}
+
+	userAgent, err := ParseProductTokens(c.UserAgent)
+	if err != nil {
+		return fmt.Errorf("invalid user agent: %w", err)
+	}
+
+	if userAgent.Upnp().AtLeast(Version20) && c.Name == "" {
+		return fmt.Errorf("UDA %s requires a control point name", userAgent.Upnp())
 	}
 
 	return nil
 }
 
 type controlPoint struct {
-	config ControlPointConfig
+	transport transport
+	userAgent ProductTokens
+	name      string
+	uuid      string
 }
 
 func NewControlPoint(config ControlPointConfig) (ControlPoint, error) {
-	config.Group = config.Group.orDefault()
-
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid control point configuration: %w", err)
 	}
 
-	return controlPoint{
-		config: config,
-	}, nil
+	return newControlPoint(config), nil
 }
 
-func (c controlPoint) Search(ctx context.Context, target Target, maxWait time.Duration) iter.Seq2[Received[SearchResponse], error] {
-	return func(yield func(Received[SearchResponse], error) bool) {
-		packet, err := c.packet(c.config.Group.String(), target, maxWait)
-		if err != nil {
-			yield(Received[SearchResponse]{}, err)
+func newControlPoint(config ControlPointConfig) controlPoint {
+	userAgent := defaultProductTokens()
+	if config.UserAgent != "" {
+		userAgent = readProductTokens(config.UserAgent)
+	}
 
-			return
-		}
-
-		senders, err := openSenders(c.config.Group)
-		if err != nil {
-			yield(Received[SearchResponse]{}, err)
-
-			return
-		}
-
-		searchCtx, cancel := context.WithTimeout(ctx, maxWait+searchGrace)
-		defer cancel()
-
-		c.run(ctx, searchCtx, senders, c.config.Group.Address(), packet, yield)
+	return controlPoint{
+		transport: newTransport(config.Group, config.Logger),
+		userAgent: userAgent,
+		name:      config.Name,
+		uuid:      config.Uuid,
 	}
 }
 
-func (c controlPoint) SearchUnicast(ctx context.Context, device netip.AddrPort, target Target) iter.Seq2[Received[SearchResponse], error] {
-	return func(yield func(Received[SearchResponse], error) bool) {
+// Search searches from a control point with the default configuration.
+func Search(ctx context.Context, target string, maxWait time.Duration) iter.Seq2[SearchResponse, error] {
+	return newControlPoint(ControlPointConfig{}).Search(ctx, target, maxWait)
+}
+
+// Watch watches from a control point with the default configuration.
+func Watch(ctx context.Context, target string) iter.Seq2[Event, error] {
+	return newControlPoint(ControlPointConfig{}).Watch(ctx, target)
+}
+
+func (c controlPoint) Search(ctx context.Context, target string, maxWait time.Duration) iter.Seq2[SearchResponse, error] {
+	return func(yield func(SearchResponse, error) bool) {
+		wait := min(max((maxWait+time.Second-1).Truncate(time.Second), maxWaitFloor), maxWaitCeiling)
+
+		packet, err := c.packet(c.transport.group.String(), target, wait)
+		if err != nil {
+			yield(SearchResponse{}, err)
+
+			return
+		}
+
+		senders, err := c.transport.openSenders()
+		if err != nil {
+			yield(SearchResponse{}, err)
+
+			return
+		}
+
+		searchCtx, cancel := context.WithTimeout(ctx, wait+searchGrace)
+		defer cancel()
+
+		c.run(ctx, searchCtx, senders, c.transport.group.Address(), packet, yield)
+	}
+}
+
+func (c controlPoint) SearchUnicast(ctx context.Context, device netip.AddrPort, target string) iter.Seq2[SearchResponse, error] {
+	return func(yield func(SearchResponse, error) bool) {
 		packet, err := c.packet(device.String(), target, 0)
 		if err != nil {
-			yield(Received[SearchResponse]{}, err)
+			yield(SearchResponse{}, err)
 
 			return
 		}
 
 		conn, err := net.ListenUDP(udpNetwork, nil)
 		if err != nil {
-			yield(Received[SearchResponse]{}, fmt.Errorf("failed to open a socket: %w", err))
+			yield(SearchResponse{}, fmt.Errorf("failed to open a socket: %w", err))
 
 			return
 		}
@@ -108,59 +146,71 @@ func (c controlPoint) SearchUnicast(ctx context.Context, device netip.AddrPort, 
 	}
 }
 
-func (c controlPoint) run(ctx, searchCtx context.Context, senders []endpoint, to netip.AddrPort, packet []byte, yield func(Received[SearchResponse], error) bool) {
-	messages := listen(searchCtx, senders...)
+func (c controlPoint) run(ctx, searchCtx context.Context, senders []endpoint, to netip.AddrPort, packet []byte, yield func(SearchResponse, error) bool) {
+	messages := c.transport.listen(searchCtx, senders...)
 
-	if err := send(searchCtx, senders, to, packet); err != nil {
-		yield(Received[SearchResponse]{}, err)
+	if err := c.transport.send(searchCtx, senders, to, packet); err != nil {
+		yield(SearchResponse{}, err)
 
 		return
 	}
 
-	go repeat(searchCtx, senders, to, packet)
+	go c.transport.repeat(searchCtx, senders, to, packet)
 
-	for received := range messages {
-		response, ok := received.Message.(SearchResponse)
+	// The M-SEARCH goes out more than once (§1.3.2), and devices answer every copy.
+	seen := make(map[string]bool)
+
+	for datagram := range messages {
+		response, ok := datagram.message.(SearchResponse)
 		if !ok {
-
-			slog.DebugContext(ctx, logIgnored, logKeyFrom, received.From, logKeyType, received.Message.Type())
+			c.transport.logger.DebugContext(ctx, "ssdp: message ignored", "from", datagram.from, "type", datagram.message.Type())
 
 			continue
 		}
 
-		answer := Received[SearchResponse]{
-			Message:   response,
-			From:      received.From,
-			Interface: received.Interface,
+		if seen[response.ServiceName.String()] {
+			continue
 		}
 
-		if !yield(answer, nil) {
+		seen[response.ServiceName.String()] = true
+
+		response.From = datagram.from
+		response.Interface = datagram.interfaceName
+
+		if !yield(response, nil) {
 			return
 		}
 	}
 
 	if err := ctx.Err(); err != nil {
-		yield(Received[SearchResponse]{}, err)
+		yield(SearchResponse{}, err)
 	}
 }
 
-func (c controlPoint) Watch(ctx context.Context, target Target) iter.Seq2[Event, error] {
+func (c controlPoint) Watch(ctx context.Context, target string) iter.Seq2[Event, error] {
 	return func(yield func(Event, error) bool) {
-		packet, err := c.packet(c.config.Group.String(), target, MaxWaitFloor)
+		watched, err := ParseTarget(target)
 		if err != nil {
 			yield(Event{}, err)
 
 			return
 		}
 
-		listener, err := openListener(c.config.Group)
+		packet, err := c.packet(c.transport.group.String(), target, maxWaitFloor)
 		if err != nil {
 			yield(Event{}, err)
 
 			return
 		}
 
-		senders, err := openSenders(c.config.Group)
+		listener, err := c.transport.openListener()
+		if err != nil {
+			yield(Event{}, err)
+
+			return
+		}
+
+		senders, err := c.transport.openSenders()
 		if err != nil {
 			closeAll(listener)
 			yield(Event{}, err)
@@ -171,21 +221,21 @@ func (c controlPoint) Watch(ctx context.Context, target Target) iter.Seq2[Event,
 		watchCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		messages := listen(watchCtx, append(slices.Clone(senders), listener)...)
+		messages := c.transport.listen(watchCtx, append(slices.Clone(senders), listener)...)
 
-		if err := send(watchCtx, senders, c.config.Group.Address(), packet); err != nil {
+		if err := c.transport.send(watchCtx, senders, c.transport.group.Address(), packet); err != nil {
 			yield(Event{}, err)
 
 			return
 		}
 
-		go repeat(watchCtx, senders, c.config.Group.Address(), packet)
+		go c.transport.repeat(watchCtx, senders, c.transport.group.Address(), packet)
 
-		watch(messages, newCache(target), yield)
+		watch(messages, newCache(watched), yield)
 	}
 }
 
-func watch(messages <-chan Received[Message], devices *cache, yield func(Event, error) bool) {
+func watch(messages <-chan received, devices *cache, yield func(Event, error) bool) {
 	expiry := time.NewTimer(0)
 	expiry.Stop()
 
@@ -195,12 +245,12 @@ func watch(messages <-chan Received[Message], devices *cache, yield func(Event, 
 		var events []Event
 
 		select {
-		case received, ok := <-messages:
+		case datagram, ok := <-messages:
 			if !ok {
 				return
 			}
 
-			events = devices.apply(received, time.Now())
+			events = devices.apply(datagram, time.Now())
 		case now := <-expiry.C:
 			events = devices.expire(now)
 		}
@@ -219,20 +269,25 @@ func watch(messages <-chan Received[Message], devices *cache, yield func(Event, 
 	}
 }
 
-func (c controlPoint) packet(host string, target Target, maxWait time.Duration) ([]byte, error) {
-	search := Search{
-		Host:    host,
-		Target:  target,
-		MaxWait: maxWait,
-
-		UserAgent:        c.config.UserAgent,
-		ControlPointName: c.config.Name,
-		ControlPointUuid: c.config.Uuid,
-	}
-
-	if err := search.Check(); err != nil {
+func (c controlPoint) packet(host, target string, maxWait time.Duration) ([]byte, error) {
+	parsed, err := ParseTarget(target)
+	if err != nil {
 		return nil, err
 	}
 
-	return search.MarshalBinary()
+	request := SearchRequest{
+		Host:    host,
+		Target:  parsed,
+		MaxWait: maxWait,
+
+		UserAgent:        c.userAgent,
+		ControlPointName: c.name,
+		ControlPointUuid: c.uuid,
+	}
+
+	if err := request.Check(); err != nil {
+		return nil, err
+	}
+
+	return request.MarshalBinary()
 }

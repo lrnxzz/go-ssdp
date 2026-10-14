@@ -57,8 +57,8 @@ func Test_ParseTarget_RejectsEmptyTargets(t *testing.T) {
 func Test_ParseTarget_ReadsTheTypeParts(t *testing.T) {
 	target := mustTarget(t, "urn:schemas-upnp-org:service:AVTransport:2")
 
-	if target.Domain() != StandardDomain || target.Name() != "AVTransport" || target.Version() != 2 {
-		t.Errorf("Expected %s AVTransport 2, got %s %s %d", StandardDomain, target.Domain(), target.Name(), target.Version())
+	if target.Domain() != standardDomain || target.Name() != "AVTransport" || target.Version() != 2 {
+		t.Errorf("Expected %s AVTransport 2, got %s %s %d", standardDomain, target.Domain(), target.Name(), target.Version())
 	}
 }
 
@@ -69,7 +69,7 @@ func Test_ParseTarget_ReadsTheUuid(t *testing.T) {
 }
 
 func Test_NewServiceTypeTarget_ReplacesPeriodsInTheDomain(t *testing.T) {
-	target, err := NewServiceTypeTarget("dial-multiscreen.org", "dial", 1)
+	target, err := newServiceTypeTarget("dial-multiscreen.org", "dial", 1)
 	if err != nil {
 		t.Fatalf("Failed to create target: %v", err)
 	}
@@ -80,7 +80,7 @@ func Test_NewServiceTypeTarget_ReplacesPeriodsInTheDomain(t *testing.T) {
 }
 
 func Test_NewDeviceTypeTarget_BuildsTheUrn(t *testing.T) {
-	target, err := NewDeviceTypeTarget(StandardDomain, "MediaRenderer", 1)
+	target, err := newDeviceTypeTarget(standardDomain, "MediaRenderer", 1)
 	if err != nil {
 		t.Fatalf("Failed to create target: %v", err)
 	}
@@ -97,16 +97,16 @@ func Test_NewDeviceTypeTarget_BuildsTheUrn(t *testing.T) {
 func Test_NewDeviceTypeTarget_RejectsInvalidTypes(t *testing.T) {
 	longest := strings.Repeat("x", 64)
 
-	if _, err := NewDeviceTypeTarget(StandardDomain, longest, 1); err != nil {
+	if _, err := newDeviceTypeTarget(standardDomain, longest, 1); err != nil {
 		t.Errorf("Expected a 64 character name to be accepted, got %v", err)
 	}
 
 	tests := map[string]error{
 		"empty domain":  typeTargetError("", "Gadget", 1),
-		"empty name":    typeTargetError(StandardDomain, "", 1),
-		"long name":     typeTargetError(StandardDomain, longest+"x", 1),
-		"version zero":  typeTargetError(StandardDomain, "Gadget", 0),
-		"version below": typeTargetError(StandardDomain, "Gadget", -1),
+		"empty name":    typeTargetError(standardDomain, "", 1),
+		"long name":     typeTargetError(standardDomain, longest+"x", 1),
+		"version zero":  typeTargetError(standardDomain, "Gadget", 0),
+		"version below": typeTargetError(standardDomain, "Gadget", -1),
 	}
 
 	for name, err := range tests {
@@ -117,7 +117,7 @@ func Test_NewDeviceTypeTarget_RejectsInvalidTypes(t *testing.T) {
 }
 
 func typeTargetError(domain, name string, version int) error {
-	_, err := NewDeviceTypeTarget(domain, name, version)
+	_, err := newDeviceTypeTarget(domain, name, version)
 
 	return err
 }
@@ -173,7 +173,7 @@ func Test_Target_ResponseTarget(t *testing.T) {
 }
 
 func Test_Target_IsZero(t *testing.T) {
-	if !(Target{}).IsZero() || NewAllTarget().IsZero() {
+	if !(Target{}).IsZero() || newAllTarget().IsZero() {
 		t.Error("Expected only the zero target to be zero")
 	}
 }

@@ -69,9 +69,9 @@ func Test_ProductTokens_KeepTheTextTheyWereReadFrom(t *testing.T) {
 
 func Test_NewProductTokens_WritesTheUdaLayout(t *testing.T) {
 	tests := map[string]ProductTokens{
-		exampleServer:                NewProductTokens(NewProduct("unix", "5.1"), Version11, NewProduct("MyProduct", "1.0")),
-		"UPnP/2.0":                   NewProductTokens(Product{}, Version20, Product{}),
-		"Linux UPnP/1.0 goku-tv/1.0": NewProductTokens(NewProduct("Linux", ""), Version10, NewProduct("goku-tv", "1.0")),
+		exampleServer:                newProductTokens(newProduct("unix", "5.1"), Version11, newProduct("MyProduct", "1.0")),
+		"UPnP/2.0":                   newProductTokens(Product{}, Version20, Product{}),
+		"Linux UPnP/1.0 goku-tv/1.0": newProductTokens(newProduct("Linux", ""), Version10, newProduct("goku-tv", "1.0")),
 	}
 
 	for expected, tokens := range tests {
@@ -82,7 +82,7 @@ func Test_NewProductTokens_WritesTheUdaLayout(t *testing.T) {
 }
 
 func Test_NewProductTokens_ParseBackToThemselves(t *testing.T) {
-	tokens := NewProductTokens(NewProduct("unix", "5.1"), Version11, NewProduct("MyProduct", "1.0"))
+	tokens := newProductTokens(newProduct("unix", "5.1"), Version11, newProduct("MyProduct", "1.0"))
 
 	if parsed := mustProductTokens(t, tokens.String()); parsed != tokens {
 		t.Errorf("Expected %+v, got %+v", tokens, parsed)
@@ -107,9 +107,9 @@ func Test_ReadProductTokens_KeepsWhatItCannotParse(t *testing.T) {
 
 func Test_Product(t *testing.T) {
 	tests := map[Product]string{
-		NewProduct("Linux", "3.14"): "Linux/3.14",
-		NewProduct("Linux", ""):     "Linux",
-		NewProduct("", ""):          "",
+		newProduct("Linux", "3.14"): "Linux/3.14",
+		newProduct("Linux", ""):     "Linux",
+		newProduct("", ""):          "",
 	}
 
 	for product, expected := range tests {
@@ -118,7 +118,7 @@ func Test_Product(t *testing.T) {
 		}
 	}
 
-	product := NewProduct("MyProduct", "1.0")
+	product := newProduct("MyProduct", "1.0")
 
 	if product.Name() != "MyProduct" || product.Version() != "1.0" || product.IsZero() {
 		t.Errorf("Expected MyProduct 1.0, got %s %s", product.Name(), product.Version())

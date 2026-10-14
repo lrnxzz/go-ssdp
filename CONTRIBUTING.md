@@ -38,5 +38,11 @@ acronyms written as words too, like `Uuid` and `BootId`. Composite literals that
 element per line, types are always declared at package level, and code lives where it is used instead
 of in small helpers.
 
+The public API takes protocol values as text, like `"upnp:rootdevice"`, parses them inside and hands back
+typed values; where the specification allows, the library picks the protocol defaults itself. Logs go
+through the configured `*slog.Logger`, with the message and attribute keys written out at each call.
+
 Comments are technical and explain a decision taken from a detail of the protocol, citing the section
 of the specification it comes from, like `UDA 1.1 §1.3.2`. Code that reads plainly gets no comment.
+Behavior a caller relies on, like errors, defaults and lifetimes, is documented by topic in
+[`ssdp/doc.go`](ssdp/doc.go).

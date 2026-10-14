@@ -11,47 +11,47 @@ import (
 const receiveTimeout = 2 * time.Second
 
 func Test_Listen_DeliversWhatIsSentToTheGroup(t *testing.T) {
-	group := hostOnlyGroup(t)
-	listener, senders := openEndpoints(t, group)
+	current := newTransport(hostOnlyGroup(t), nil)
+	listener, senders := openEndpoints(t, current)
 
-	messages := listen(t.Context(), listener)
+	messages := current.listen(t.Context(), listener)
 
-	if err := send(t.Context(), senders, group.Address(), marshal(t, exampleAlive(t))); err != nil {
+	if err := current.send(t.Context(), senders, current.group.Address(), marshal(t, exampleAlive(t))); err != nil {
 		t.Fatalf("Failed to send: %v", err)
 	}
 
-	received := receive(t, messages)
+	datagram := receive(t, messages)
 
-	if received.Message.Type() != MessageAlive || received.Interface != listenerName || !received.From.IsValid() {
-		t.Errorf("Expected an alive on the group listener from a valid address, got %+v", received)
+	if datagram.message.Type() != MessageAlive || datagram.interfaceName != "group" || !datagram.from.IsValid() {
+		t.Errorf("Expected an alive on the group listener from a valid address, got %+v", datagram)
 	}
 }
 
 func Test_Listen_DropsDatagramsThatAreNotSsdp(t *testing.T) {
-	group := hostOnlyGroup(t)
-	listener, senders := openEndpoints(t, group)
+	current := newTransport(hostOnlyGroup(t), nil)
+	listener, senders := openEndpoints(t, current)
 
-	messages := listen(t.Context(), listener)
+	messages := current.listen(t.Context(), listener)
 
-	if err := send(t.Context(), senders, group.Address(), []byte("not ssdp at all")); err != nil {
+	if err := current.send(t.Context(), senders, current.group.Address(), []byte("not ssdp at all")); err != nil {
 		t.Fatalf("Failed to send: %v", err)
 	}
 
-	if err := send(t.Context(), senders, group.Address(), marshal(t, exampleByeBye(t))); err != nil {
+	if err := current.send(t.Context(), senders, current.group.Address(), marshal(t, exampleByeBye(t))); err != nil {
 		t.Fatalf("Failed to send: %v", err)
 	}
 
-	if received := receive(t, messages); received.Message.Type() != MessageByeBye {
-		t.Errorf("Expected the byebye after the dropped datagram, got %s", received.Message.Type())
+	if datagram := receive(t, messages); datagram.message.Type() != MessageByeBye {
+		t.Errorf("Expected the byebye after the dropped datagram, got %s", datagram.message.Type())
 	}
 }
 
 func Test_Listen_StopsWhenTheContextEnds(t *testing.T) {
-	group := hostOnlyGroup(t)
-	listener, _ := openEndpoints(t, group)
+	current := newTransport(hostOnlyGroup(t), nil)
+	listener, _ := openEndpoints(t, current)
 
 	ctx, cancel := context.WithCancel(t.Context())
-	messages := listen(ctx, listener)
+	messages := current.listen(ctx, listener)
 
 	cancel()
 
@@ -66,18 +66,18 @@ func Test_Listen_StopsWhenTheContextEnds(t *testing.T) {
 }
 
 func Test_OpenListener_SharesThePort(t *testing.T) {
-	group := hostOnlyGroup(t)
-	first, senders := openEndpoints(t, group)
+	current := newTransport(hostOnlyGroup(t), nil)
+	first, senders := openEndpoints(t, current)
 
-	second, err := openListener(group)
+	second, err := current.openListener()
 	if err != nil {
 		t.Fatalf("Expected a second listener on the same port, got %v", err)
 	}
 
-	firstMessages := listen(t.Context(), first)
-	secondMessages := listen(t.Context(), second)
+	firstMessages := current.listen(t.Context(), first)
+	secondMessages := current.listen(t.Context(), second)
 
-	if err := send(t.Context(), senders, group.Address(), marshal(t, exampleAlive(t))); err != nil {
+	if err := current.send(t.Context(), senders, current.group.Address(), marshal(t, exampleAlive(t))); err != nil {
 		t.Fatalf("Failed to send: %v", err)
 	}
 
@@ -97,21 +97,29 @@ func Test_Send_FailsWhenNoSocketCanSend(t *testing.T) {
 		newEndpoint(conn, defaultInterface),
 	}
 
-	if err := send(t.Context(), closed, netip.MustParseAddrPort("127.0.0.1:9"), []byte("x")); err == nil {
+	if err := newTransport(Group{}, nil).send(t.Context(), closed, netip.MustParseAddrPort("127.0.0.1:9"), []byte("x")); err == nil {
 		t.Error("Expected an error when every socket is closed")
 	}
 }
 
 func Test_Repeat_SendsTheRemainingRepetitions(t *testing.T) {
-	group := hostOnlyGroup(t)
-	listener, senders := openEndpoints(t, group)
+	current := newTransport(hostOnlyGroup(t), nil)
+	listener, senders := openEndpoints(t, current)
 
-	messages := listen(t.Context(), listener)
+	messages := current.listen(t.Context(), listener)
 
-	repeat(t.Context(), senders, group.Address(), marshal(t, exampleSearch(t)))
+	current.repeat(t.Context(), senders, current.group.Address(), marshal(t, exampleSearch(t)))
 
 	for range (repetitions - 1) * len(senders) {
 		receive(t, messages)
+	}
+}
+
+func Test_NewTransport_FillsTheDefaults(t *testing.T) {
+	current := newTransport(Group{}, nil)
+
+	if current.group != DefaultGroup || current.logger == nil {
+		t.Errorf("Expected the default group and a logger, got %+v", current)
 	}
 }
 
@@ -128,8 +136,7 @@ func Test_MulticastInterfaces_AreUpWithIpv4AndNotLoopback(t *testing.T) {
 }
 
 func Test_OpenSenders_BindsEachSocketToItsInterface(t *testing.T) {
-	group := hostOnlyGroup(t)
-	_, senders := openEndpoints(t, group)
+	_, senders := openEndpoints(t, newTransport(hostOnlyGroup(t), nil))
 
 	for _, sender := range senders {
 		local := sender.conn.LocalAddr().(*net.UDPAddr)
@@ -155,15 +162,15 @@ func Test_Sleep(t *testing.T) {
 	}
 }
 
-func openEndpoints(t *testing.T, group Group) (endpoint, []endpoint) {
+func openEndpoints(t *testing.T, current transport) (endpoint, []endpoint) {
 	t.Helper()
 
-	listener, err := openListener(group)
+	listener, err := current.openListener()
 	if err != nil {
 		t.Fatalf("Failed to open the listener: %v", err)
 	}
 
-	senders, err := openSenders(group)
+	senders, err := current.openSenders()
 	if err != nil {
 		t.Fatalf("Failed to open the senders: %v", err)
 	}
@@ -176,19 +183,19 @@ func openEndpoints(t *testing.T, group Group) (endpoint, []endpoint) {
 	return listener, senders
 }
 
-func receive(t *testing.T, messages <-chan Received[Message]) Received[Message] {
+func receive(t *testing.T, messages <-chan received) received {
 	t.Helper()
 
 	select {
-	case received, open := <-messages:
+	case datagram, open := <-messages:
 		if !open {
 			t.Fatal("Expected a message, the stream closed")
 		}
 
-		return received
+		return datagram
 	case <-time.After(receiveTimeout):
 		t.Fatal("Expected a message within the timeout")
 	}
 
-	return Received[Message]{}
+	return received{}
 }

@@ -18,7 +18,7 @@ import (
 type MessageType int
 
 const (
-	MessageSearch MessageType = iota + 1
+	MessageSearchRequest MessageType = iota + 1
 	MessageSearchResponse
 	MessageAlive
 	MessageByeBye
@@ -38,24 +38,24 @@ const (
 var blankLine = []byte(lineEnd + lineEnd)
 
 var standardHeaders = canonicalNames(
-	HeaderHost, HeaderMan, HeaderMaxWait, HeaderSearchTarget, HeaderNotificationType,
-	HeaderNotificationSubtype, HeaderServiceName, HeaderLocation, HeaderServer, HeaderUserAgent,
-	HeaderCacheControl, HeaderDate, HeaderExt, HeaderBootId, HeaderConfigId, HeaderNextBootId,
-	HeaderSearchPort, HeaderSecureLocation, HeaderControlPointName, HeaderControlPointUuid, HeaderTcpPort,
+	headerHost, headerMan, headerMaxWait, headerSearchTarget, headerNotificationType,
+	headerNotificationSubtype, headerServiceName, headerLocation, headerServer, headerUserAgent,
+	headerCacheControl, headerDate, headerExt, headerBootId, headerConfigId, headerNextBootId,
+	headerSearchPort, headerSecureLocation, headerControlPointName, headerControlPointUuid, headerTcpPort,
 )
 
 func (t MessageType) String() string {
 	switch t {
-	case MessageSearch:
-		return MethodSearch
+	case MessageSearchRequest:
+		return methodSearch
 	case MessageSearchResponse:
 		return "search response"
 	case MessageAlive:
-		return SubtypeAlive
+		return subtypeAlive
 	case MessageByeBye:
-		return SubtypeByeBye
+		return subtypeByeBye
 	case MessageUpdate:
-		return SubtypeUpdate
+		return subtypeUpdate
 	default:
 		return "unknown"
 	}
@@ -81,15 +81,15 @@ func Decode(data []byte) (Message, error) {
 	switch {
 	case f.isResponse():
 		return decode[SearchResponse](f)
-	case f.isRequest(MethodSearch):
-		return decode[Search](f)
-	case f.isRequest(MethodNotify):
-		switch subtype := f.header.Get(HeaderNotificationSubtype); subtype {
-		case SubtypeAlive:
+	case f.isRequest(methodSearch):
+		return decode[SearchRequest](f)
+	case f.isRequest(methodNotify):
+		switch subtype := f.header.Get(headerNotificationSubtype); subtype {
+		case subtypeAlive:
 			return decode[Alive](f)
-		case SubtypeByeBye:
+		case subtypeByeBye:
 			return decode[ByeBye](f)
-		case SubtypeUpdate:
+		case subtypeUpdate:
 			return decode[Update](f)
 		default:
 			return nil, fmt.Errorf("%w: NTS %q is not a notification subtype", ErrMalformed, subtype)
@@ -251,7 +251,7 @@ func (f frame) target(name string) (Target, error) {
 }
 
 func (f frame) serviceName() (ServiceName, error) {
-	value, err := f.required(HeaderServiceName)
+	value, err := f.required(headerServiceName)
 	if err != nil {
 		return ServiceName{}, err
 	}
@@ -274,11 +274,11 @@ func (f frame) url(name string) (string, error) {
 }
 
 func (f frame) counter(name string) (Optional[int], error) {
-	return f.ranged(name, 0, CounterCeiling)
+	return f.ranged(name, 0, counterCeiling)
 }
 
 func (f frame) port(name string) (Optional[int], error) {
-	return f.ranged(name, PortFloor, PortCeiling)
+	return f.ranged(name, portFloor, portCeiling)
 }
 
 func (f frame) ranged(name string, floor, ceiling int) (Optional[int], error) {
@@ -310,7 +310,7 @@ func (f frame) seconds(name string) (time.Duration, error) {
 }
 
 func (f frame) maxAge() (time.Duration, error) {
-	cacheControl := f.header.Get(HeaderCacheControl)
+	cacheControl := f.header.Get(headerCacheControl)
 
 	for directive := range strings.SplitSeq(cacheControl, directiveSplitter) {
 		name, value, ok := strings.Cut(directive, directiveAssign)
@@ -320,7 +320,7 @@ func (f frame) maxAge() (time.Duration, error) {
 
 		seconds, err := strconv.Atoi(strings.TrimSpace(value))
 		if err != nil || seconds < 0 {
-			return 0, fmt.Errorf("%w: %s %q has no valid max-age", ErrMalformed, HeaderCacheControl, cacheControl)
+			return 0, fmt.Errorf("%w: %s %q has no valid max-age", ErrMalformed, headerCacheControl, cacheControl)
 		}
 
 		return time.Duration(seconds) * time.Second, nil
@@ -330,14 +330,14 @@ func (f frame) maxAge() (time.Duration, error) {
 }
 
 func (f frame) date() (time.Time, error) {
-	value := f.header.Get(HeaderDate)
+	value := f.header.Get(headerDate)
 	if value == "" {
 		return time.Time{}, nil
 	}
 
 	date, err := http.ParseTime(value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%w: %s %q is not an HTTP date", ErrMalformed, HeaderDate, value)
+		return time.Time{}, fmt.Errorf("%w: %s %q is not an HTTP date", ErrMalformed, headerDate, value)
 	}
 
 	return date, nil
@@ -423,7 +423,7 @@ func (w *writer) maxAge(value time.Duration) *writer {
 		return w
 	}
 
-	return w.field(HeaderCacheControl, maxAgeDirective+directiveAssign+strconv.Itoa(int(value/time.Second)))
+	return w.field(headerCacheControl, maxAgeDirective+directiveAssign+strconv.Itoa(int(value/time.Second)))
 }
 
 func (w *writer) date(value time.Time) *writer {
@@ -431,7 +431,7 @@ func (w *writer) date(value time.Time) *writer {
 		return w
 	}
 
-	return w.field(HeaderDate, value.UTC().Format(http.TimeFormat))
+	return w.field(headerDate, value.UTC().Format(http.TimeFormat))
 }
 
 func (w *writer) extensions(extensions http.Header) *writer {

@@ -22,63 +22,134 @@ func Test_ResponseWindow(t *testing.T) {
 	}
 }
 
-func Test_NewRootDeviceAdvertisements(t *testing.T) {
-	service := mustTarget(t, "urn:schemas-upnp-org:service:AVTransport:1")
-	advertisements := NewRootDeviceAdvertisements(exampleUuid, mustTarget(t, exampleDevice), service)
+func Test_NewDevice_AnnouncesTheUuidAndEveryTarget(t *testing.T) {
+	service := "urn:schemas-upnp-org:service:AVTransport:1"
+
+	opened, err := NewDevice(DeviceConfig{
+		Group: hostOnlyGroup(t),
+		Uuid:  exampleUuid,
+		Targets: []string{
+			"upnp:rootdevice",
+			exampleDevice,
+			service,
+			"uuid:" + exampleUuid,
+		},
+		Location: exampleLocation,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create device: %v", err)
+	}
+	defer opened.Close()
 
 	expected := []string{
-		"upnp:rootdevice uuid:" + exampleUuid + "::upnp:rootdevice",
 		"uuid:" + exampleUuid + " uuid:" + exampleUuid,
+		"upnp:rootdevice uuid:" + exampleUuid + "::upnp:rootdevice",
 		exampleDevice + " uuid:" + exampleUuid + "::" + exampleDevice,
-		service.String() + " uuid:" + exampleUuid + "::" + service.String(),
+		service + " uuid:" + exampleUuid + "::" + service,
 	}
+
+	advertisements := opened.(*device).advertisements
 
 	if len(advertisements) != len(expected) {
 		t.Fatalf("Expected %d advertisements, got %d", len(expected), len(advertisements))
 	}
 
-	for index, advertisement := range advertisements {
-		if got := advertisement.Target.String() + " " + advertisement.ServiceName.String(); got != expected[index] {
+	for index, advertised := range advertisements {
+		if got := advertised.target.String() + " " + advertised.serviceName.String(); got != expected[index] {
 			t.Errorf("Expected advertisement %d to be %q, got %q", index, expected[index], got)
 		}
 	}
 }
 
+func Test_NewDevice_FillsTheDefaults(t *testing.T) {
+	started := time.Now().Unix()
+
+	opened, err := NewDevice(DeviceConfig{
+		Group:    hostOnlyGroup(t),
+		Uuid:     exampleUuid,
+		Location: exampleLocation,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create device: %v", err)
+	}
+	defer opened.Close()
+
+	created := opened.(*device)
+	bootId, _ := created.bootId.Get()
+
+	if !created.server.Upnp().AtLeast(Version11) || created.maxAge != maxAgeFloor || int64(bootId) < started {
+		t.Errorf("Expected a UDA 1.1 server, a max age of %s and a boot id from now, got %s, %s and %d", maxAgeFloor, created.server, created.maxAge, bootId)
+	}
+}
+
+func Test_Device_ClosesOnce(t *testing.T) {
+	opened, err := NewDevice(DeviceConfig{
+		Group:    hostOnlyGroup(t),
+		Uuid:     exampleUuid,
+		Location: exampleLocation,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create device: %v", err)
+	}
+
+	if err := opened.Close(); err != nil {
+		t.Fatalf("Failed to close: %v", err)
+	}
+
+	if err := opened.Close(); err != nil {
+		t.Errorf("Expected closing again to do nothing, got %v", err)
+	}
+}
+
 func Test_DeviceConfig_Validate(t *testing.T) {
 	valid := DeviceConfig{
-		Advertisements: NewRootDeviceAdvertisements(exampleUuid, mustTarget(t, exampleDevice)),
-		Location:       exampleLocation,
-		Server:         mustProductTokens(t, exampleServer),
-		MaxAge:         MaxAgeFloor,
-		BootId:         NewOptional(1),
-		ConfigId:       NewOptional(1),
+		Uuid: exampleUuid,
+		Targets: []string{
+			"upnp:rootdevice",
+			exampleDevice,
+		},
+		Location: exampleLocation,
+		Server:   exampleServer,
+		ConfigId: 1,
 	}
 
 	if err := valid.Validate(); err != nil {
 		t.Errorf("Expected a valid configuration, got %v", err)
 	}
 
-	noAdvertisements := valid
-	noAdvertisements.Advertisements = nil
+	noUuid := valid
+	noUuid.Uuid = ""
+
+	searchAll := valid
+	searchAll.Targets = []string{
+		"ssdp:all",
+	}
+
+	emptyTarget := valid
+	emptyTarget.Targets = []string{
+		"",
+	}
 
 	relativeLocation := valid
 	relativeLocation.Location = "/description.xml"
 
-	noServer := valid
-	noServer.Server = ProductTokens{}
+	serverWithoutUpnp := valid
+	serverWithoutUpnp.Server = "Linux/6.6 Product/1.0"
 
 	shortMaxAge := valid
 	shortMaxAge.MaxAge = 500 * time.Millisecond
 
-	noCounters := valid
-	noCounters.BootId = Optional[int]{}
+	largeConfigId := valid
+	largeConfigId.ConfigId = configIdCeiling + 1
 
 	tests := map[string]DeviceConfig{
-		"no advertisements": noAdvertisements,
-		"relative location": relativeLocation,
-		"no server":         noServer,
-		"short max age":     shortMaxAge,
-		"no counters":       noCounters,
+		"no uuid":             noUuid,
+		"ssdp:all":            searchAll,
+		"empty target":        emptyTarget,
+		"relative location":   relativeLocation,
+		"server without UPnP": serverWithoutUpnp,
+		"short max age":       shortMaxAge,
+		"large config id":     largeConfigId,
 	}
 
 	for name, config := range tests {
@@ -95,10 +166,8 @@ func Test_DeviceConfig_Validate_ReportsEveryProblem(t *testing.T) {
 	}
 
 	problems := []string{
-		"advertisement",
+		"uuid",
 		"location",
-		"server",
-		"max age",
 	}
 
 	for _, problem := range problems {

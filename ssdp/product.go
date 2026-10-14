@@ -2,6 +2,8 @@ package ssdp
 
 import (
 	"fmt"
+	"runtime"
+	"runtime/debug"
 	"strings"
 )
 
@@ -18,7 +20,7 @@ type Product struct {
 	version string
 }
 
-func NewProduct(name, version string) Product {
+func newProduct(name, version string) Product {
 	return Product{
 		name:    name,
 		version: version,
@@ -28,7 +30,7 @@ func NewProduct(name, version string) Product {
 func parseProduct(token string) Product {
 	name, version, _ := strings.Cut(token, productSeparator)
 
-	return NewProduct(name, version)
+	return newProduct(name, version)
 }
 
 func (p Product) Name() string {
@@ -59,7 +61,7 @@ type ProductTokens struct {
 	raw     string
 }
 
-func NewProductTokens(system Product, upnp Version, product Product) ProductTokens {
+func newProductTokens(system Product, upnp Version, product Product) ProductTokens {
 	tokens := ProductTokens{
 		system:  system,
 		upnp:    upnp,
@@ -95,6 +97,22 @@ func ParseProductTokens(value string) (ProductTokens, error) {
 	}
 
 	return ProductTokens{}, fmt.Errorf("%w: %q has no UPnP/major.minor token", ErrMalformed, value)
+}
+
+// defaultProductTokens fills SERVER and USER-AGENT when a configuration leaves them empty, in the
+// "OS/version UPnP/1.1 product/version" form of §1.2.2.
+func defaultProductTokens() ProductTokens {
+	version := ""
+
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, module := range append(info.Deps, &info.Main) {
+			if module.Path == "github.com/lrnxzz/go-ssdp" && module.Version != "(devel)" {
+				version = strings.TrimPrefix(module.Version, "v")
+			}
+		}
+	}
+
+	return newProductTokens(newProduct(runtime.GOOS, systemVersion()), Version11, newProduct("go-ssdp", version))
 }
 
 func readProductTokens(value string) ProductTokens {
@@ -148,7 +166,7 @@ func (t ProductTokens) format() string {
 		tokens = append(tokens, t.system.String())
 	}
 
-	tokens = append(tokens, NewProduct(upnpProductName, t.upnp.String()).String())
+	tokens = append(tokens, newProduct(upnpProductName, t.upnp.String()).String())
 
 	if !t.product.IsZero() {
 		tokens = append(tokens, t.product.String())

@@ -1,6 +1,7 @@
 package ssdp
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"slices"
 	"sync"
 	"time"
 )
@@ -19,77 +21,84 @@ type Device interface {
 	Close() error
 }
 
-// Advertisement is one NT and USN pair a device announces and answers searches for.
-type Advertisement struct {
-	Target      Target
-	ServiceName ServiceName
-}
-
-func NewAdvertisement(uuid string, target Target) Advertisement {
-	return Advertisement{
-		Target:      target,
-		ServiceName: NewServiceName(uuid, target),
-	}
-}
-
-// NewRootDeviceAdvertisements is the set a root device announces: upnp:rootdevice, its uuid, its type and each service type.
-func NewRootDeviceAdvertisements(uuid string, deviceType Target, serviceTypes ...Target) []Advertisement {
-	advertisements := []Advertisement{
-		NewAdvertisement(uuid, NewRootDeviceTarget()),
-		NewAdvertisement(uuid, NewUuidTarget(uuid)),
-		NewAdvertisement(uuid, deviceType),
-	}
-
-	for _, serviceType := range serviceTypes {
-		advertisements = append(advertisements, NewAdvertisement(uuid, serviceType))
-	}
-
-	return advertisements
-}
-
 type DeviceConfig struct {
 	// Group is DefaultGroup when zero.
 	Group Group
 
-	Advertisements []Advertisement
-	Location       string
-	Server         ProductTokens
-	MaxAge         time.Duration
-	BootId         Optional[int]
-	ConfigId       Optional[int]
+	Uuid string
+
+	// Targets are announced besides the uuid: upnp:rootdevice, the device type and each service type.
+	Targets []string
+
+	Location string
+
+	// Server is built from the platform when empty.
+	Server string
+
+	// MaxAge is 1800 seconds when zero.
+	MaxAge   time.Duration
+	ConfigId int
 
 	// Extensions go out in every announcement and answer.
 	Extensions http.Header
+
+	// Logger is slog.Default() when nil.
+	Logger *slog.Logger
 }
 
 func (c DeviceConfig) Validate() error {
 	violations := make([]error, 0)
 
-	if len(c.Advertisements) == 0 {
-		violations = append(violations, errors.New("at least one advertisement is required"))
+	if c.Uuid == "" {
+		violations = append(violations, errors.New("uuid is required"))
+	}
+
+	for _, value := range c.Targets {
+		target, err := ParseTarget(value)
+		if err != nil {
+			violations = append(violations, err)
+		} else if target.Type() == TargetAll {
+			violations = append(violations, fmt.Errorf("%s is searched for, never announced", value))
+		}
 	}
 
 	if location, err := url.Parse(c.Location); err != nil || !location.IsAbs() || location.Host == "" {
 		violations = append(violations, fmt.Errorf("location %q is not an absolute URL", c.Location))
 	}
 
-	if c.Server.IsZero() {
-		violations = append(violations, errors.New("server is required"))
+	if c.Server != "" {
+		if _, err := ParseProductTokens(c.Server); err != nil {
+			violations = append(violations, fmt.Errorf("invalid server: %w", err))
+		}
 	}
 
-	if c.MaxAge < time.Second {
+	if c.MaxAge != 0 && c.MaxAge < time.Second {
 		violations = append(violations, fmt.Errorf("max age %s is shorter than a second", c.MaxAge))
 	}
 
-	if c.Server.Upnp().AtLeast(Version11) && (!c.BootId.IsPresent() || !c.ConfigId.IsPresent()) {
-		violations = append(violations, fmt.Errorf("UDA %s requires a boot id and a config id", c.Server.Upnp()))
+	if c.ConfigId < 0 || c.ConfigId > configIdCeiling {
+		violations = append(violations, fmt.Errorf("config id %d is outside 0-%d", c.ConfigId, configIdCeiling))
 	}
 
 	return errors.Join(violations...)
 }
 
+// advertisement is one NT and USN pair a device announces and answers searches for.
+type advertisement struct {
+	target      Target
+	serviceName ServiceName
+}
+
 type device struct {
-	config   DeviceConfig
+	transport      transport
+	advertisements []advertisement
+	location       string
+	server         ProductTokens
+	maxAge         time.Duration
+	bootId         Optional[int]
+	configId       Optional[int]
+	extensions     http.Header
+
 	listener endpoint
 	senders  []endpoint
 	cancel   context.CancelFunc
@@ -97,20 +106,47 @@ type device struct {
 	close    sync.Once
 }
 
-// NewDevice starts answering searches and announcing config.Advertisements right away.
+// NewDevice starts answering searches and announcing itself right away.
 func NewDevice(config DeviceConfig) (Device, error) {
-	config.Group = config.Group.orDefault()
-
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid device configuration: %w", err)
 	}
 
-	listener, err := openListener(config.Group)
+	advertisements := []advertisement{
+		{
+			target:      newUuidTarget(config.Uuid),
+			serviceName: newServiceName(config.Uuid, Target{}),
+		},
+	}
+
+	for _, value := range config.Targets {
+		target, _ := ParseTarget(value)
+
+		if slices.ContainsFunc(advertisements, func(known advertisement) bool {
+			return known.target == target
+		}) {
+			continue
+		}
+
+		advertisements = append(advertisements, advertisement{
+			target:      target,
+			serviceName: newServiceName(config.Uuid, target),
+		})
+	}
+
+	server := defaultProductTokens()
+	if config.Server != "" {
+		server = readProductTokens(config.Server)
+	}
+
+	transport := newTransport(config.Group, config.Logger)
+
+	listener, err := transport.openListener()
 	if err != nil {
 		return nil, err
 	}
 
-	senders, err := openSenders(config.Group)
+	senders, err := transport.openSenders()
 	if err != nil {
 		closeAll(listener)
 
@@ -120,14 +156,24 @@ func NewDevice(config DeviceConfig) (Device, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	d := &device{
-		config:   config,
+		transport:      transport,
+		advertisements: advertisements,
+		location:       config.Location,
+		server:         server,
+		maxAge:         cmp.Or(config.MaxAge, maxAgeFloor),
+
+		// §1.2.2 suggests the seconds since 1970 of the first announcement.
+		bootId:     NewOptional(int(time.Now().Unix() & counterCeiling)),
+		configId:   NewOptional(config.ConfigId),
+		extensions: config.Extensions,
+
 		listener: listener,
 		senders:  senders,
 		cancel:   cancel,
 		done:     make(chan struct{}),
 	}
 
-	go d.run(ctx, listen(ctx, listener))
+	go d.run(ctx, transport.listen(ctx, listener))
 
 	return d, nil
 }
@@ -144,7 +190,7 @@ func (d *device) Close() error {
 	return nil
 }
 
-func (d *device) run(ctx context.Context, messages <-chan Received[Message]) {
+func (d *device) run(ctx context.Context, messages <-chan received) {
 	defer close(d.done)
 
 	if !sleep(ctx, rand.N(initialDelayCeiling)) {
@@ -160,13 +206,13 @@ func (d *device) run(ctx context.Context, messages <-chan Received[Message]) {
 		select {
 		case <-ctx.Done():
 			return
-		case received, ok := <-messages:
+		case datagram, ok := <-messages:
 			if !ok {
 				return
 			}
 
-			if search, isSearch := received.Message.(Search); isSearch {
-				d.answer(ctx, search, received.From)
+			if request, isRequest := datagram.message.(SearchRequest); isRequest {
+				d.answer(ctx, request, datagram.from)
 			}
 		case <-refresh.C:
 			d.announce(ctx, d.alives())
@@ -176,13 +222,13 @@ func (d *device) run(ctx context.Context, messages <-chan Received[Message]) {
 }
 
 func (d *device) refreshInterval() time.Duration {
-	quarter := d.config.MaxAge / 4
+	quarter := d.maxAge / 4
 
 	return quarter + rand.N(quarter)
 }
 
 func (d *device) announce(ctx context.Context, messages []Message) {
-	packets := marshalAll(messages)
+	packets := d.marshal(messages)
 
 	for attempt := range repetitions {
 		if attempt > 0 && !sleep(ctx, repetitionInterval) {
@@ -190,26 +236,26 @@ func (d *device) announce(ctx context.Context, messages []Message) {
 		}
 
 		for _, packet := range packets {
-			_ = send(ctx, d.senders, d.config.Group.Address(), packet)
+			_ = d.transport.send(ctx, d.senders, d.transport.group.Address(), packet)
 		}
 	}
 }
 
-func (d *device) answer(ctx context.Context, search Search, from netip.AddrPort) {
-	if search.IsMulticast() && search.MaxWait < MaxWaitFloor {
-		slog.DebugContext(ctx, logIgnored, logKeyFrom, from, logKeyType, search.Type(), logKeyReason, "multicast search without MX")
+func (d *device) answer(ctx context.Context, request SearchRequest, from netip.AddrPort) {
+	if request.IsMulticast() && request.MaxWait < maxWaitFloor {
+		d.transport.logger.DebugContext(ctx, "ssdp: message ignored", "from", from, "type", request.Type(), "reason", "multicast search without MX")
 
 		return
 	}
 
-	packets := marshalAll(d.responses(search))
+	packets := d.marshal(d.responses(request))
 	if len(packets) == 0 {
 		return
 	}
 
 	delay := time.Duration(0)
-	if search.IsMulticast() {
-		delay = rand.N(responseWindow(search.MaxWait))
+	if request.IsMulticast() {
+		delay = rand.N(responseWindow(request.MaxWait))
 	}
 
 	time.AfterFunc(delay, func() {
@@ -224,28 +270,28 @@ func (d *device) answer(ctx context.Context, search Search, from netip.AddrPort)
 }
 
 func responseWindow(maxWait time.Duration) time.Duration {
-	return min(maxWait, MaxWaitCeiling) - responseMargin
+	return min(maxWait, maxWaitCeiling) - responseMargin
 }
 
-func (d *device) responses(search Search) []Message {
+func (d *device) responses(request SearchRequest) []Message {
 	responses := make([]Message, 0)
 
-	for _, advertisement := range d.config.Advertisements {
-		if !advertisement.Target.Answers(search.Target) {
+	for _, advertised := range d.advertisements {
+		if !advertised.target.Answers(request.Target) {
 			continue
 		}
 
 		responses = append(responses, SearchResponse{
-			Target:      advertisement.Target.responseTarget(search.Target),
-			ServiceName: advertisement.ServiceName,
-			Location:    d.config.Location,
-			Server:      d.config.Server,
-			MaxAge:      d.config.MaxAge,
+			Target:      advertised.target.responseTarget(request.Target),
+			ServiceName: advertised.serviceName,
+			Location:    d.location,
+			Server:      d.server,
+			MaxAge:      d.maxAge,
 			Date:        time.Now(),
-			BootId:      d.config.BootId,
-			ConfigId:    d.config.ConfigId,
+			BootId:      d.bootId,
+			ConfigId:    d.configId,
 
-			Extensions: d.config.Extensions,
+			Extensions: d.extensions,
 		})
 	}
 
@@ -253,20 +299,20 @@ func (d *device) responses(search Search) []Message {
 }
 
 func (d *device) alives() []Message {
-	alives := make([]Message, 0, len(d.config.Advertisements))
+	alives := make([]Message, 0, len(d.advertisements))
 
-	for _, advertisement := range d.config.Advertisements {
+	for _, advertised := range d.advertisements {
 		alives = append(alives, Alive{
-			Host:        d.config.Group.String(),
-			Target:      advertisement.Target,
-			ServiceName: advertisement.ServiceName,
-			Location:    d.config.Location,
-			Server:      d.config.Server,
-			MaxAge:      d.config.MaxAge,
-			BootId:      d.config.BootId,
-			ConfigId:    d.config.ConfigId,
+			Host:        d.transport.group.String(),
+			Target:      advertised.target,
+			ServiceName: advertised.serviceName,
+			Location:    d.location,
+			Server:      d.server,
+			MaxAge:      d.maxAge,
+			BootId:      d.bootId,
+			ConfigId:    d.configId,
 
-			Extensions: d.config.Extensions,
+			Extensions: d.extensions,
 		})
 	}
 
@@ -274,28 +320,28 @@ func (d *device) alives() []Message {
 }
 
 func (d *device) byeByes() []Message {
-	byeByes := make([]Message, 0, len(d.config.Advertisements))
+	byeByes := make([]Message, 0, len(d.advertisements))
 
-	for _, advertisement := range d.config.Advertisements {
+	for _, advertised := range d.advertisements {
 		byeByes = append(byeByes, ByeBye{
-			Host:        d.config.Group.String(),
-			Target:      advertisement.Target,
-			ServiceName: advertisement.ServiceName,
-			BootId:      d.config.BootId,
-			ConfigId:    d.config.ConfigId,
+			Host:        d.transport.group.String(),
+			Target:      advertised.target,
+			ServiceName: advertised.serviceName,
+			BootId:      d.bootId,
+			ConfigId:    d.configId,
 		})
 	}
 
 	return byeByes
 }
 
-func marshalAll(messages []Message) [][]byte {
+func (d *device) marshal(messages []Message) [][]byte {
 	packets := make([][]byte, 0, len(messages))
 
 	for _, message := range messages {
 		packet, err := message.MarshalBinary()
 		if err != nil {
-			slog.Debug(logNotSent, logKeyType, message.Type(), logKeyReason, err)
+			d.transport.logger.Debug("ssdp: datagram not sent", "type", message.Type(), "reason", err)
 
 			continue
 		}

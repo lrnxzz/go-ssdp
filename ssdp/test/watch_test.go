@@ -25,7 +25,7 @@ func Test_Integration_Watch_SeesADeviceAppearAndLeave(t *testing.T) {
 				t.Fatalf("Failed to initialize %s container: %v", name, err)
 			}
 
-			events := watch(t, ctx, mustTarget(t, mediaServer))
+			events := watch(t, ctx, mediaServer)
 
 			appeared := expectEvent(t, events, ssdp.EventAppeared, address)
 
@@ -46,7 +46,7 @@ func Test_Integration_Watch_SeesADeviceAppearAndLeave(t *testing.T) {
 	}
 }
 
-func watch(t *testing.T, ctx context.Context, target ssdp.Target) <-chan ssdp.Event {
+func watch(t *testing.T, ctx context.Context, target string) <-chan ssdp.Event {
 	t.Helper()
 
 	events := make(chan ssdp.Event, eventBuffer)
@@ -54,7 +54,7 @@ func watch(t *testing.T, ctx context.Context, target ssdp.Target) <-chan ssdp.Ev
 	go func() {
 		defer close(events)
 
-		for event, err := range newControlPoint(t).Watch(ctx, target) {
+		for event, err := range ssdp.Watch(ctx, target) {
 			if err != nil {
 				t.Errorf("Failed to watch: %v", err)
 

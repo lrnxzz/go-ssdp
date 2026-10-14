@@ -1,6 +1,7 @@
 package ssdp
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -14,6 +15,20 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+// transport is the network side of a control point or a device: the group it talks to and the logger
+// its sockets report to.
+type transport struct {
+	group  Group
+	logger *slog.Logger
+}
+
+func newTransport(group Group, logger *slog.Logger) transport {
+	return transport{
+		group:  group.orDefault(),
+		logger: cmp.Or(logger, slog.Default()),
+	}
+}
+
 type endpoint struct {
 	conn          *net.UDPConn
 	interfaceName string
@@ -26,18 +41,25 @@ func newEndpoint(conn *net.UDPConn, interfaceName string) endpoint {
 	}
 }
 
-func openSenders(group Group) ([]endpoint, error) {
+// received is a decoded message, the address it came from and the local interface it arrived on.
+type received struct {
+	message       Message
+	from          netip.AddrPort
+	interfaceName string
+}
+
+func (t transport) openSenders() ([]endpoint, error) {
 	interfaces := multicastInterfaces()
 	if len(interfaces) == 0 {
-		return openDefaultSender(group)
+		return t.openDefaultSender()
 	}
 
 	endpoints := make([]endpoint, 0, len(interfaces))
 
 	for _, iface := range interfaces {
-		sender, err := openSender(iface, group)
+		sender, err := t.openSender(iface)
 		if err != nil {
-			slog.Debug(logSkipped, logKeyInterface, iface.Name, logKeyReason, err)
+			t.logger.Debug("ssdp: interface skipped", "interface", iface.Name, "reason", err)
 
 			continue
 		}
@@ -52,7 +74,7 @@ func openSenders(group Group) ([]endpoint, error) {
 	return endpoints, nil
 }
 
-func openSender(iface net.Interface, group Group) (endpoint, error) {
+func (t transport) openSender(iface net.Interface) (endpoint, error) {
 	address, _ := interfaceAddress(iface)
 
 	conn, err := net.ListenUDP(udpNetwork, net.UDPAddrFromAddrPort(netip.AddrPortFrom(address, 0)))
@@ -60,7 +82,7 @@ func openSender(iface net.Interface, group Group) (endpoint, error) {
 		return endpoint{}, err
 	}
 
-	if err := configureMulticast(conn, &iface, group); err != nil {
+	if err := t.configureMulticast(conn, &iface); err != nil {
 		_ = conn.Close()
 
 		return endpoint{}, err
@@ -69,13 +91,13 @@ func openSender(iface net.Interface, group Group) (endpoint, error) {
 	return newEndpoint(conn, iface.Name), nil
 }
 
-func openDefaultSender(group Group) ([]endpoint, error) {
+func (t transport) openDefaultSender() ([]endpoint, error) {
 	conn, err := net.ListenUDP(udpNetwork, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open a socket: %w", err)
 	}
 
-	if err := configureMulticast(conn, nil, group); err != nil {
+	if err := t.configureMulticast(conn, nil); err != nil {
 		_ = conn.Close()
 
 		return nil, err
@@ -86,7 +108,7 @@ func openDefaultSender(group Group) ([]endpoint, error) {
 	}, nil
 }
 
-func configureMulticast(conn *net.UDPConn, iface *net.Interface, group Group) error {
+func (t transport) configureMulticast(conn *net.UDPConn, iface *net.Interface) error {
 	packetConn := ipv4.NewPacketConn(conn)
 
 	if iface != nil {
@@ -95,7 +117,7 @@ func configureMulticast(conn *net.UDPConn, iface *net.Interface, group Group) er
 		}
 	}
 
-	if err := packetConn.SetMulticastTTL(group.ttl); err != nil {
+	if err := packetConn.SetMulticastTTL(t.group.ttl); err != nil {
 		return fmt.Errorf("failed to set multicast ttl: %w", err)
 	}
 
@@ -106,12 +128,12 @@ func configureMulticast(conn *net.UDPConn, iface *net.Interface, group Group) er
 	return nil
 }
 
-func openListener(group Group) (endpoint, error) {
+func (t transport) openListener() (endpoint, error) {
 	config := net.ListenConfig{
 		Control: reuseAddress,
 	}
 
-	address := net.JoinHostPort(allInterfaces, strconv.Itoa(int(group.address.Port())))
+	address := net.JoinHostPort("0.0.0.0", strconv.Itoa(int(t.group.address.Port())))
 
 	packetConn, err := config.ListenPacket(context.Background(), udpNetwork, address)
 	if err != nil {
@@ -125,23 +147,23 @@ func openListener(group Group) (endpoint, error) {
 		return endpoint{}, fmt.Errorf("listening on %s gave no UDP socket", address)
 	}
 
-	if err := joinGroup(conn, group); err != nil {
+	if err := t.joinGroup(conn); err != nil {
 		_ = conn.Close()
 
 		return endpoint{}, err
 	}
 
-	return newEndpoint(conn, listenerName), nil
+	return newEndpoint(conn, "group"), nil
 }
 
-func joinGroup(conn *net.UDPConn, group Group) error {
+func (t transport) joinGroup(conn *net.UDPConn) error {
 	packetConn := ipv4.NewPacketConn(conn)
-	groupAddress := net.UDPAddrFromAddrPort(group.address)
+	groupAddress := net.UDPAddrFromAddrPort(t.group.address)
 	joined := 0
 
 	for _, iface := range multicastInterfaces() {
 		if err := packetConn.JoinGroup(&iface, groupAddress); err != nil {
-			slog.Debug(logSkipped, logKeyInterface, iface.Name, logKeyReason, err)
+			t.logger.Debug("ssdp: interface skipped", "interface", iface.Name, "reason", err)
 
 			continue
 		}
@@ -154,10 +176,97 @@ func joinGroup(conn *net.UDPConn, group Group) error {
 	}
 
 	if err := packetConn.JoinGroup(nil, groupAddress); err != nil {
-		return fmt.Errorf("failed to join %s on any interface: %w", group, err)
+		return fmt.Errorf("failed to join %s on any interface: %w", t.group, err)
 	}
 
 	return nil
+}
+
+func (t transport) listen(ctx context.Context, endpoints ...endpoint) <-chan received {
+	messages := make(chan received)
+
+	var loops sync.WaitGroup
+
+	for _, current := range endpoints {
+		loops.Go(func() {
+			t.read(ctx, current, messages)
+		})
+	}
+
+	stop := context.AfterFunc(ctx, func() {
+		closeAll(endpoints...)
+	})
+
+	go func() {
+		loops.Wait()
+		stop()
+		closeAll(endpoints...)
+		close(messages)
+	}()
+
+	return messages
+}
+
+func (t transport) read(ctx context.Context, current endpoint, messages chan<- received) {
+	buffer := make([]byte, maxDatagramSize)
+
+	for {
+		size, from, err := current.conn.ReadFromUDPAddrPort(buffer)
+		if err != nil {
+			return
+		}
+
+		from = netip.AddrPortFrom(from.Addr().Unmap(), from.Port())
+
+		message, err := Decode(buffer[:size])
+		if err != nil {
+			t.logger.DebugContext(ctx, "ssdp: datagram dropped", "from", from, "interface", current.interfaceName, "reason", err)
+
+			continue
+		}
+
+		datagram := received{
+			message:       message,
+			from:          from,
+			interfaceName: current.interfaceName,
+		}
+
+		select {
+		case messages <- datagram:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (t transport) send(ctx context.Context, endpoints []endpoint, to netip.AddrPort, packet []byte) error {
+	sent := 0
+
+	for _, current := range endpoints {
+		if _, err := current.conn.WriteToUDPAddrPort(packet, to); err != nil {
+			t.logger.DebugContext(ctx, "ssdp: datagram not sent", "interface", current.interfaceName, "reason", err)
+
+			continue
+		}
+
+		sent++
+	}
+
+	if sent == 0 {
+		return fmt.Errorf("failed to send to %s from any of %d sockets", to, len(endpoints))
+	}
+
+	return nil
+}
+
+func (t transport) repeat(ctx context.Context, endpoints []endpoint, to netip.AddrPort, packet []byte) {
+	for range repetitions - 1 {
+		if !sleep(ctx, repetitionInterval) {
+			return
+		}
+
+		_ = t.send(ctx, endpoints, to, packet)
+	}
 }
 
 func multicastInterfaces() []net.Interface {
@@ -195,94 +304,6 @@ func interfaceAddress(iface net.Interface) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
-func listen(ctx context.Context, endpoints ...endpoint) <-chan Received[Message] {
-	messages := make(chan Received[Message])
-
-	var loops sync.WaitGroup
-
-	for _, current := range endpoints {
-		loops.Go(func() {
-			current.read(ctx, messages)
-		})
-	}
-
-	stop := context.AfterFunc(ctx, func() {
-		closeAll(endpoints...)
-	})
-
-	go func() {
-		loops.Wait()
-		stop()
-		closeAll(endpoints...)
-		close(messages)
-	}()
-
-	return messages
-}
-
-func (e endpoint) read(ctx context.Context, messages chan<- Received[Message]) {
-	buffer := make([]byte, maxDatagramSize)
-
-	for {
-		size, from, err := e.conn.ReadFromUDPAddrPort(buffer)
-		if err != nil {
-			return
-		}
-
-		from = netip.AddrPortFrom(from.Addr().Unmap(), from.Port())
-
-		message, err := Decode(buffer[:size])
-		if err != nil {
-
-			slog.DebugContext(ctx, logDropped, logKeyFrom, from, logKeyInterface, e.interfaceName, logKeyReason, err)
-
-			continue
-		}
-
-		received := Received[Message]{
-			Message:   message,
-			From:      from,
-			Interface: e.interfaceName,
-		}
-
-		select {
-		case messages <- received:
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-func send(ctx context.Context, endpoints []endpoint, to netip.AddrPort, packet []byte) error {
-	sent := 0
-
-	for _, current := range endpoints {
-		if _, err := current.conn.WriteToUDPAddrPort(packet, to); err != nil {
-			slog.DebugContext(ctx, logNotSent, logKeyInterface, current.interfaceName, logKeyReason, err)
-
-			continue
-		}
-
-		sent++
-	}
-
-	if sent == 0 {
-		return fmt.Errorf("failed to send to %s from any of %d sockets", to, len(endpoints))
-	}
-
-	return nil
-}
-
-func repeat(ctx context.Context, endpoints []endpoint, to netip.AddrPort, packet []byte) {
-	for range repetitions - 1 {
-		if !sleep(ctx, repetitionInterval) {
-			return
-		}
-
-		_ = send(ctx, endpoints, to, packet)
-	}
-}
-
 func closeAll(endpoints ...endpoint) {
 	for _, current := range endpoints {
 		_ = current.conn.Close()
@@ -299,11 +320,4 @@ func sleep(ctx context.Context, duration time.Duration) bool {
 	case <-timer.C:
 		return true
 	}
-}
-
-// Received is a decoded message, the address it came from and the local interface it arrived on.
-type Received[T any] struct {
-	Message   T
-	From      netip.AddrPort
-	Interface string
 }

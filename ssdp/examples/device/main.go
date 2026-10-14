@@ -16,9 +16,11 @@ import (
 	"github.com/lrnxzz/go-ssdp/ssdp"
 )
 
-const uuid = "2fac1234-31f8-11b4-a222-08002b34c003"
-
-const configId = 1
+const (
+	uuid       = "2fac1234-31f8-11b4-a222-08002b34c003"
+	deviceType = "urn:schemas-upnp-org:device:Basic:1"
+	configId   = 1
+)
 
 var description = template.Must(template.New("description").Parse(`<?xml version="1.0"?>
 <root xmlns="urn:schemas-upnp-org:device-1-0" configId="{{.ConfigId}}">
@@ -39,11 +41,6 @@ var description = template.Must(template.New("description").Parse(`<?xml version
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-
-	deviceType, err := ssdp.NewDeviceTypeTarget(ssdp.StandardDomain, "Basic", 1)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	route, err := net.Dial("udp4", ssdp.MulticastAddress)
 	if err != nil {
@@ -82,12 +79,13 @@ func main() {
 	}()
 
 	device, err := ssdp.NewDevice(ssdp.DeviceConfig{
-		Advertisements: ssdp.NewRootDeviceAdvertisements(uuid, deviceType),
-		Location:       location,
-		Server:         ssdp.NewProductTokens(ssdp.NewProduct("Linux", ""), ssdp.Version11, ssdp.NewProduct("go-ssdp-example", "1.0")),
-		MaxAge:         ssdp.MaxAgeFloor,
-		BootId:         ssdp.NewOptional(1),
-		ConfigId:       ssdp.NewOptional(configId),
+		Uuid: uuid,
+		Targets: []string{
+			"upnp:rootdevice",
+			deviceType,
+		},
+		Location: location,
+		ConfigId: configId,
 	})
 	if err != nil {
 		log.Fatal(err)

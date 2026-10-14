@@ -35,8 +35,14 @@ jobs:
       - uses: crate-ci/typos@v1.51.1
 
   test:
-    name: Test
+    name: Test (Go ${{ matrix.go-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The two Go releases the Go team supports.
+        go-version:
+          - oldstable
+          - stable
     permissions:
       # The coverage badge is committed to the badges branch.
       contents: write
@@ -45,12 +51,13 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: ${{ matrix.go-version }}
 
       - name: Run the unit and integration tests
         run: scripts/test.sh
 
       - name: Check coverage
+        if: matrix.go-version == 'stable'
         uses: vladopajic/go-test-coverage@v2
         with:
           config: .testcoverage.yml

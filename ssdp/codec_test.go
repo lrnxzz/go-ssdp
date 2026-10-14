@@ -71,7 +71,7 @@ func Test_Decode_RejectsBrokenFieldLines(t *testing.T) {
 }
 
 func Test_Decode_RejectsUnknownNotificationSubtypes(t *testing.T) {
-	packet := strings.Replace(udaAlive, SubtypeAlive, "ssdp:propchange", 1)
+	packet := strings.Replace(udaAlive, subtypeAlive, "ssdp:propchange", 1)
 
 	if _, err := Decode([]byte(packet)); !errors.Is(err, ErrMalformed) {
 		t.Errorf("Expected an unknown NTS to be malformed, got %v", err)
@@ -95,12 +95,12 @@ func Test_Decode_AcceptsBareLineFeeds(t *testing.T) {
 }
 
 func Test_Decode_TrimsFieldValues(t *testing.T) {
-	if got := mustDecode[Search](t, []byte(foldedSearch)).Target.String(); got != "0" {
+	if got := mustDecode[SearchRequest](t, []byte(foldedSearch)).Target.String(); got != "0" {
 		t.Errorf("Expected ST %q, got %q", "0", got)
 	}
 
 	padded := strings.Replace(udaSearch, "ST: ", "ST:   ", 1)
-	if got := mustDecode[Search](t, []byte(padded)).Target.String(); got != exampleDevice {
+	if got := mustDecode[SearchRequest](t, []byte(padded)).Target.String(); got != exampleDevice {
 		t.Errorf("Expected ST %q, got %q", exampleDevice, got)
 	}
 }
@@ -199,8 +199,8 @@ func Test_Writer_SortsExtensions(t *testing.T) {
 
 func Test_Violations(t *testing.T) {
 	violations := Violations{
-		violation("%s is required", HeaderHost),
-		violation("%s is required", HeaderLocation),
+		violation("%s is required", headerHost),
+		violation("%s is required", headerLocation),
 	}
 
 	if !errors.Is(violations, ErrNonConformant) {
@@ -230,7 +230,7 @@ func Test_ViolationsOf_ReturnsNilWhenNothingBroke(t *testing.T) {
 
 func Test_MessageType_String(t *testing.T) {
 	tests := map[MessageType]string{
-		MessageSearch:         "M-SEARCH",
+		MessageSearchRequest:  "M-SEARCH",
 		MessageSearchResponse: "search response",
 		MessageAlive:          "ssdp:alive",
 		MessageByeBye:         "ssdp:byebye",
@@ -301,10 +301,10 @@ func BenchmarkDecode(b *testing.B) {
 }
 
 func BenchmarkMarshalSearch(b *testing.B) {
-	search := Search{
+	search := SearchRequest{
 		Host:    MulticastAddress,
-		Target:  NewRootDeviceTarget(),
-		MaxWait: MaxWaitFloor,
+		Target:  newRootDeviceTarget(),
+		MaxWait: maxWaitFloor,
 	}
 
 	b.ReportAllocs()

@@ -11,7 +11,7 @@
 //
 // # Messages
 //
-//   - The five messages are [Search], [SearchResponse], [Alive], [ByeBye] and [Update].
+//   - The five messages are [SearchRequest], [SearchResponse], [Alive], [ByeBye] and [Update].
 //   - [Decode] tells them apart by the start-line (§1.1.1) and, for notifications, by NTS.
 //   - Messages marshal in the field order of the specification's examples.
 //   - Vendor fields (§1.1.3) are kept in Extensions.
@@ -43,10 +43,34 @@
 //
 // # Targets
 //
+//   - Targets are passed as text, like "upnp:rootdevice", and read with [ParseTarget].
 //   - A [Target] is ssdp:all, upnp:rootdevice, a uuid, a device or service type, or a vendor value.
 //   - Periods in a vendor domain become hyphens (§1.2.2); type names have at most 64 characters (§2.3).
 //   - A device answers searches for its type and every older version of it (§1.3.2).
 //   - Answers echo the searched version; ssdp:all gets one answer per announced target (§1.3.3).
+//
+// # Defaults
+//
+// Every configuration works when left empty:
+//
+//   - The group is 239.255.255.250:1900, and multicast leaves with a TTL of 2 (§1); a [Group] with a TTL
+//     of 0 keeps it on the host.
+//   - SERVER and USER-AGENT name the operating system, UDA 1.1 and go-ssdp, in the
+//     "OS/version UPnP/1.1 product/version" form of §1.2.2.
+//   - BOOTID is the seconds since 1970 of a device's first announcement, as §1.2.2 suggests, and max-age
+//     is 1800 seconds.
+//   - Logs go to slog.Default().
+//
+// # Errors and lifetimes
+//
+//   - Searches and watches yield an error only when the target doesn't parse or no socket can open or
+//     send, and the iteration ends with it.
+//   - Datagrams that aren't SSDP never become errors: they are dropped (§1.1.5) and logged at debug level.
+//   - Answers that break the specification are yielded as well; Check reports what they break.
+//   - A search ends half a second after MX; when ctx ends it first, ctx's error comes last. A watch ends
+//     with ctx, without an error.
+//   - Every call opens its own sockets, so control points and devices are safe for concurrent use.
+//   - Closing a device again does nothing.
 //
 // # Transport
 //
@@ -54,13 +78,15 @@
 //     interface that searched and devices are found even behind a VPN or a virtual switch (§1.3).
 //   - Loopback is left out; this host is reached through multicast loopback.
 //   - The group listener uses SO_REUSEADDR to share port 1900 with the operating system's SSDP stack.
-//   - Multicast leaves with a TTL of 2 (§1); a [Group] with a TTL of 0 keeps it on the host.
-//   - Datagrams that aren't SSDP are dropped (§1.1.5) and logged with log/slog at debug level.
 //
 // # Control point
 //
+//   - [Search] and [Watch] run from a control point with the default configuration; [NewControlPoint]
+//     takes a [ControlPointConfig].
+//   - MX is maxWait rounded up to whole seconds, from 1 (§1.3.2) to 5, the longest a device waits (§1.3.3).
 //   - [ControlPoint.Search] sends each M-SEARCH three times, 100 ms apart, and listens half a second
 //     past MX for late answers (§1.3.2).
+//   - Devices answer every copy, so each USN is yielded once, with the address and interface it came from.
 //   - [ControlPoint.SearchUnicast] waits the one second §1.3.2 suggests. Unicast search came with UDA
 //     1.1, so UDA 1.0 devices like Gerbera and MiniDLNA ignore it.
 //   - [ControlPoint.Watch] opens with a search and keeps one entry per device uuid, since one byebye
@@ -72,6 +98,8 @@
 //
 // # Device
 //
+//   - A device announces its uuid and each of its targets (§1.2.2); a root device lists
+//     upnp:rootdevice, its device type and each service type.
 //   - [NewDevice] waits a random 0 to 100 ms, then sends every announcement three times (§1.2.2).
 //   - Announcements refresh at a random moment between a quarter and half of max-age (§1.2.2).
 //   - Multicast searches are answered within MX, capped at 5 seconds, from a timer (§1.3.3).
