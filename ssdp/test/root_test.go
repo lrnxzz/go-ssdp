@@ -18,10 +18,16 @@ const (
 	gerberaReady = "The Web UI can be reached"
 
 	miniDlnaContext = "../../scripts/containers/minidlna"
+	miniDlnaRepo    = "go-ssdp/minidlna"
 	miniDlnaReady   = "HTTP listening on port 8200"
 
 	upnpClientContext   = "../../scripts/containers/upnp-client"
+	upnpClientRepo      = "go-ssdp/upnp-client"
 	upnpClientListening = "advertisement:On connect"
+
+	// testcontainers draws a random name per copy of the request when none is set, so the image it
+	// builds and the one it starts can differ; a fixed name, kept between tests, can't.
+	imageTag = "test"
 
 	startupTimeout = 60 * time.Second
 	jsonLinePrefix = "{"
@@ -40,7 +46,10 @@ func InitializeGerbera(t *testing.T) (*testcontainers.DockerContainer, netip.Add
 func InitializeMiniDlna(t *testing.T) (*testcontainers.DockerContainer, netip.Addr, error) {
 	return initialize(t, "",
 		testcontainers.WithDockerfile(testcontainers.FromDockerfile{
-			Context: miniDlnaContext,
+			Context:   miniDlnaContext,
+			Repo:      miniDlnaRepo,
+			Tag:       imageTag,
+			KeepImage: true,
 		}),
 		testcontainers.WithWaitStrategy(
 			wait.ForLog(miniDlnaReady).WithStartupTimeout(startupTimeout),
@@ -51,7 +60,10 @@ func InitializeMiniDlna(t *testing.T) (*testcontainers.DockerContainer, netip.Ad
 func InitializeUpnpClientListener(t *testing.T) (*testcontainers.DockerContainer, error) {
 	return run(t, "",
 		testcontainers.WithDockerfile(testcontainers.FromDockerfile{
-			Context: upnpClientContext,
+			Context:   upnpClientContext,
+			Repo:      upnpClientRepo,
+			Tag:       imageTag,
+			KeepImage: true,
 		}),
 		testcontainers.WithCmd("--debug", "advertisements"),
 		testcontainers.WithWaitStrategy(
@@ -65,7 +77,10 @@ func RunUpnpClientSearch(t *testing.T, target string, timeout time.Duration) ([]
 
 	client, err := run(t, "",
 		testcontainers.WithDockerfile(testcontainers.FromDockerfile{
-			Context: upnpClientContext,
+			Context:   upnpClientContext,
+			Repo:      upnpClientRepo,
+			Tag:       imageTag,
+			KeepImage: true,
 		}),
 		testcontainers.WithCmd("--strict", "--timeout", strconv.Itoa(int(timeout/time.Second)), "search", "--search_target", target),
 		testcontainers.WithWaitStrategy(
